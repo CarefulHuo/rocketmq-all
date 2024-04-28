@@ -64,7 +64,7 @@ import org.apache.rocketmq.remoting.exception.RemotingTooMuchRequestException;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /**
- * RocketMQ 远程通信客户端实现
+ * RocketMQ 远程通信服务端实现
  */
 public class NettyRemotingServer extends NettyRemotingAbstract implements RemotingServer {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(RemotingHelper.ROCKETMQ_REMOTING);
@@ -183,6 +183,14 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             && Epoll.isAvailable();
     }
 
+    /**
+     * todo 疑问疑惑，待定哈
+     * Neety 使用的模板，主要是管道上绑定的通道处理器，这些处理实现了 Netty 和 RocketMQ 之前的连接，下面列举主要的处理器
+     * 1. 编码和解码器
+     * 2. Netty 提供的心跳处理器 IdleStateHandler
+     * 3. 连接相关的处理器 NettyConnectManageHandler
+     * 4. 完成对端请求的处理和响应的处理器 NettyServerHandler
+     */
     @Override
     public void start() {
         this.defaultEventExecutorGroup = new DefaultEventExecutorGroup(
@@ -197,6 +205,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                 }
             });
 
+        // 创建下面通道关联的各种处理器
         prepareSharableHandlers();
 
         ServerBootstrap childHandler =
@@ -291,13 +300,21 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         }
     }
 
+    /**
+     * 注册请求处理器
+     * @param requestCode 请求码
+     * @param processor 请求处理器
+     * @param executor 请求处理器关联的线程池
+     */
     @Override
     public void registerProcessor(int requestCode, NettyRequestProcessor processor, ExecutorService executor) {
         ExecutorService executorThis = executor;
+        // 如果没有指定线程池，则使用服务端默认的线程池
         if (null == executor) {
             executorThis = this.publicExecutor;
         }
 
+        // 创建 Pair 对象，用于封装映射关系
         Pair<NettyRequestProcessor, ExecutorService> pair = new Pair<NettyRequestProcessor, ExecutorService>(processor, executorThis);
         this.processorTable.put(requestCode, pair);
     }
@@ -346,10 +363,16 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         return this.publicExecutor;
     }
 
+    /**
+     * 准备共用的通道处理器
+     */
     private void prepareSharableHandlers() {
         handshakeHandler = new HandshakeHandler(TlsSystemConfig.tlsMode);
+        // 消息编码处理器
         encoder = new NettyEncoder();
+        // 连接处理器
         connectionManageHandler = new NettyConnectManageHandler();
+        // 请求处理器
         serverHandler = new NettyServerHandler();
     }
 
@@ -416,6 +439,10 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         }
     }
 
+    /**
+     * 继承 Netty 通道处理器，完成对端请求的处理和响应
+     * todo 绑定到 Netty 的 pipeline 上即可生效
+     */
     @ChannelHandler.Sharable
     class NettyServerHandler extends SimpleChannelInboundHandler<RemotingCommand> {
 
@@ -425,6 +452,16 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         }
     }
 
+    /**
+     * 继承 Netty 通道处理器，实现对连接的管理，包含以下操作
+     * 1. 注册通道
+     * 2. 未注册通道
+     * 3. 通道激活
+     * 4. 通道未激活
+     * 5. 用户事件触发
+     * 6. 通道异常
+     * todo 绑定到 Netty 的 pipeline 上即可生效
+     */
     @ChannelHandler.Sharable
     class NettyConnectManageHandler extends ChannelDuplexHandler {
         @Override
