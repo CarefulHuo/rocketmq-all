@@ -19,18 +19,24 @@ package org.apache.rocketmq.store;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
+/**
+ * 消息过滤器
+ */
 public interface MessageFilter {
     /**
+     * 根据 ConsumeQueue 判断消息是否匹配
+     * todo 基于 tag 模式根据 ConsumeQueue 进行消息过滤时，只对比 tag 的哈希吗
      * match by tags code or filter bit map which is calculated when message received
      * and stored in consume queue ext.
      *
-     * @param tagsCode tagsCode
-     * @param cqExtUnit extend unit of consume queue
+     * @param tagsCode tagsCode tag 的 Hash 码
+     * @param cqExtUnit extend unit of consume queue 条目扩展属性
      */
     boolean isMatchedByConsumeQueue(final Long tagsCode,
         final ConsumeQueueExt.CqExtUnit cqExtUnit);
 
     /**
+     *
      * match by message content which are stored in commit log.
      * <br>{@code msgBuffer} and {@code properties} are not all null.If invoked in store,
      * {@code properties} is null;If invoked in {@code PullRequestHoldService}, {@code msgBuffer} is null.

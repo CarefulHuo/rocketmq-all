@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
 import java.util.Map;
 
 /**
+ * 对重试主题的过滤，需要首先解码属性，获取真正的主题
  * Support filter to retry topic.
  * <br>It will decode properties first in order to get real topic.
  */

@@ -45,7 +45,7 @@ public class ConsumerManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
     private static final long CHANNEL_EXPIRED_TIMEOUT = 1000 * 120;
     /**
-     * 消息分组信息，该信息内容很多
+     * 消费组信息，该信息内容很多
      * todo
      * 1. 同一个消费组下的不同消费者如果订阅的Topic 相同，最终会进行覆盖更换之前的 Topic 对应的订阅信息，也就是以最后一个上报的消费者的订阅信息为主，忽略 tag 不一致
      * 2. 同一个消费组下的所有消费者都会心跳上报到这里。
@@ -53,6 +53,10 @@ public class ConsumerManager {
      */
     private final ConcurrentMap<String/* Group */, ConsumerGroupInfo> consumerTable =
         new ConcurrentHashMap<String, ConsumerGroupInfo>(1024);
+
+    /**
+     * 消费者客户端Id 发生变更，执行该方法
+     */
     private final ConsumerIdsChangeListener consumerIdsChangeListener;
 
     public ConsumerManager(final ConsumerIdsChangeListener consumerIdsChangeListener) {
@@ -113,7 +117,7 @@ public class ConsumerManager {
     /**
      * 注册消费消息（消费者上报）
      * @param group 消费者分组名称
-     * @param clientChannelInfo
+     * @param clientChannelInfo 通信信息，即消费者连接当前 Broker 的通道信息
      * @param consumeType 消费类型
      * @param messageModel 消息模式
      * @param consumeFromWhere 从哪里开始消费
@@ -125,7 +129,7 @@ public class ConsumerManager {
         ConsumeType consumeType, MessageModel messageModel, ConsumeFromWhere consumeFromWhere,
         final Set<SubscriptionData> subList, boolean isNotifyConsumerIdsChangedEnable) {
 
-        // 获取消费者组消息
+        // 1. 获取消费者组消息
         ConsumerGroupInfo consumerGroupInfo = this.consumerTable.get(group);
         // 如果消费组不存在，则创建，并放入 consumerTable
         if (null == consumerGroupInfo) {
@@ -134,12 +138,14 @@ public class ConsumerManager {
             consumerGroupInfo = prev != null ? prev : tmp;
         }
 
-        // 更新消息者组的消息通信，如果变动就返回 true
+        // 2. 尝试更新消息者组的消息通信，如果变动就返回 true
+        // todo 维护当前分组 Group 下的消费者信息
         boolean r1 =
             consumerGroupInfo.updateChannel(clientChannelInfo, consumeType, messageModel,
                 consumeFromWhere);
 
-        // 更新消费者组的消息订阅信息，如果变动就返回 true
+        // 3. 更新消费者组的消息订阅信息，如果变动就返回 true
+        // todo 维护当前分组 Group 下的订阅信息,相同 Topic 覆盖式不属于变动
         boolean r2 = consumerGroupInfo.updateSubscription(subList);
 
         // 消费者组的消息通信信息或订阅信息，发生变动
@@ -149,7 +155,7 @@ public class ConsumerManager {
                 this.consumerIdsChangeListener.handle(ConsumerGroupEvent.CHANGE, group, consumerGroupInfo.getAllChannel());
             }
         }
-        // 构建消费者端的消息过滤器
+        // 4. 构建消费者端的消息过滤器
         this.consumerIdsChangeListener.handle(ConsumerGroupEvent.REGISTER, group, subList);
 
         return r1 || r2;

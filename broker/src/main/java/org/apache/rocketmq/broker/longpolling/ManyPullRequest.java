@@ -20,8 +20,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ManyPullRequest {
+
+    /**
+     * 拉取消息的 remote 请求集合
+     */
     private final ArrayList<PullRequest> pullRequestList = new ArrayList<>();
 
+    /**
+     * 往集合添加拉取请求
+     * 加锁的原因：ReputMessageService 内部其实会持有 PullRequestHoldService 的引用，
+     * 也就是在运行过程中，对于拉取任务，ReputMessageService 、PullRequestHoldService 处理的任务是同一个集合
+     * @param pullRequest
+     */
     public synchronized void addPullRequest(final PullRequest pullRequest) {
         this.pullRequestList.add(pullRequest);
     }
@@ -30,6 +40,10 @@ public class ManyPullRequest {
         this.pullRequestList.addAll(many);
     }
 
+    /**
+     * 克隆并清除 pullRequestList
+     * @return
+     */
     public synchronized List<PullRequest> cloneListAndClear() {
         if (!this.pullRequestList.isEmpty()) {
             List<PullRequest> result = (ArrayList<PullRequest>) this.pullRequestList.clone();

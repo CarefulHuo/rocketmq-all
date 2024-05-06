@@ -20,6 +20,12 @@ package org.apache.rocketmq.broker.latency;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 
+/**
+ * FutureTaskExt类是FutureTask的一个扩展，添加了一个Runnable类型的字段runnable，
+ * 并提供了构造函数来设置该字段的值。它继承了 FutureTask 类的特性，可以用于异步计算并获取结果。
+ *
+ * @param <V>
+ */
 public class FutureTaskExt<V> extends FutureTask<V> {
     private final Runnable runnable;
 

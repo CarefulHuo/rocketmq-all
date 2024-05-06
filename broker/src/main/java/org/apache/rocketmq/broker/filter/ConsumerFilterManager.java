@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ * 消费者数据过滤管理器，仅仅管理使用SQL92表达式过滤的消费者
  * Consumer filter data manager.Just manage the consumers use expression filter.
  */
 public class ConsumerFilterManager extends ConfigManager {
@@ -46,10 +47,18 @@ public class ConsumerFilterManager extends ConfigManager {
 
     private static final long MS_24_HOUR = 24 * 3600 * 1000;
 
+    /**
+     * 存储消费者过滤数据
+     * key 是 Topic
+     * value 是 FilterDataMapByTopic
+     */
     private ConcurrentMap<String/*Topic*/, FilterDataMapByTopic>
         filterDataByTopic = new ConcurrentHashMap<String/*Topic*/, FilterDataMapByTopic>(256);
 
+    // transient 表示该字段不参与序列化
     private transient BrokerController brokerController;
+
+    // transient 表示该字段不参与序列化
     private transient BloomFilter bloomFilter;
 
     public ConsumerFilterManager() {
@@ -59,11 +68,14 @@ public class ConsumerFilterManager extends ConfigManager {
 
     public ConsumerFilterManager(BrokerController brokerController) {
         this.brokerController = brokerController;
+        // 根据 Broker Config 的 maxErrorRateOfBloomFilter 和 expectConsumerNumUseFilter 创建一个 BloomFilter
+        // todo  BrokerConfig 的 maxErrorRateOfBloomFilter 和 expectConsumerNumUseFilter 决定了 BloomFilter 的最大错误率和预计有多少消费者使用过滤器
         this.bloomFilter = BloomFilter.createByFn(
             brokerController.getBrokerConfig().getMaxErrorRateOfBloomFilter(),
             brokerController.getBrokerConfig().getExpectConsumerNumUseFilter()
         );
         // then set bit map length of store config.
+        // todo 设置 MessageStoreConfig 中的 消息队列过滤器长度，来源与 bloomFilter 的 M，即 total bit num.
         brokerController.getMessageStoreConfig().setBitMapLengthConsumeQueueExt(
             this.bloomFilter.getM()
         );
@@ -143,10 +155,12 @@ public class ConsumerFilterManager extends ConfigManager {
 
     public boolean register(final String topic, final String consumerGroup, final String expression,
         final String type, final long clientVersion) {
+        // 如果消息过滤类型是 tag , 返回 false
         if (ExpressionType.isTagType(type)) {
             return false;
         }
 
+        // 如果表达式为空，返回 false
         if (expression == null || expression.length() == 0) {
             return false;
         }
@@ -329,9 +343,16 @@ public class ConsumerFilterManager extends ConfigManager {
 
     public static class FilterDataMapByTopic {
 
+        /**
+         * key 消费组
+         * value 消费者过滤数据
+         */
         private ConcurrentMap<String/*consumer group*/, ConsumerFilterData>
             groupFilterData = new ConcurrentHashMap<String, ConsumerFilterData>();
 
+        /**
+         * 消息主题
+         */
         private String topic;
 
         public FilterDataMapByTopic() {

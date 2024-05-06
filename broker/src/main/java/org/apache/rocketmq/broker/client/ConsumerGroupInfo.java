@@ -34,17 +34,20 @@ import org.apache.rocketmq.common.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 消费组下的消费者上报信息
+ */
 public class ConsumerGroupInfo {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
 
     /**
-     * 消费者组信息
+     * 消费组名称
      */
     private final String groupName;
 
     /**
      * 消费者订阅关系集合
-     * todo 注意：同一个消费者组下的不同消费者如果订阅的 Topic 相同，最终会进行覆盖式替换之前的 Topic 对应的订阅信息，也就是以最后一个上报的消费者的订阅信息为准，忽略 tag 的不一致
+     * todo 注意：同一个消费组下的不同消费者如果订阅的 Topic 相同，最终会进行覆盖式替换之前的 Topic 对应的订阅信息，也就是以最后一个上报的消费者的订阅信息为准，忽略 tag 的不一致
      */
     private final ConcurrentMap<String/* Topic */, SubscriptionData> subscriptionTable =
             new ConcurrentHashMap<String, SubscriptionData>();
@@ -192,8 +195,9 @@ public class ConsumerGroupInfo {
         // 遍历订阅列表，对每一个订阅进行处理
         for (SubscriptionData sub : subList) {
             SubscriptionData old = this.subscriptionTable.get(sub.getTopic());
-            // 检查订阅是否存在，不存在则创建订阅信息
+            // 检查订阅是否存在
             if (old == null) {
+                // 不存在，则创建订阅信息
                 SubscriptionData prev = this.subscriptionTable.putIfAbsent(sub.getTopic(), sub);
                 if (null == prev) {
                     updated = true;

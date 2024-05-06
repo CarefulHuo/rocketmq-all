@@ -24,6 +24,11 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 该类是 ThreadPoolExecutor 的一个子类，用于创建一个固定大小的线程池，
+ * 提供了四个构造函数，分别用于配置线程池的核心线程数、最大线程数、空闲线程的存活时间、线程队列、线程工厂和拒绝执行处理器。
+ * 重写的 newTaskFor方法用于创建一个带有 FutureTaskExt 的 RunnableFuture 对象。
+ */
 public class BrokerFixedThreadPoolExecutor extends ThreadPoolExecutor {
     public BrokerFixedThreadPoolExecutor(final int corePoolSize, final int maximumPoolSize, final long keepAliveTime,
         final TimeUnit unit,

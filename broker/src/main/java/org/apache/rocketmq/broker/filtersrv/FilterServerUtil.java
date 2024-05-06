@@ -20,17 +20,31 @@ package org.apache.rocketmq.broker.filtersrv;
 
 import org.apache.rocketmq.logging.InternalLogger;
 
+/**
+ * 该类主要是为了执行外部的shell命令
+ */
 public class FilterServerUtil {
+
+    /**
+     * 执行 shell 命令
+     *
+     * @param shellString 表示要执行的shell命令
+     * @param log         用于记录日志
+     */
     public static void callShell(final String shellString, final InternalLogger log) {
         Process process = null;
         try {
+            // 1. 首先通过 splitShellString 方法将shellString按空格分割成命令数组
             String[] cmdArray = splitShellString(shellString);
+            // 2. 用 Runtime.getRuntime().exec(cmdArray) 执行命令，并等待命令执行完成。
             process = Runtime.getRuntime().exec(cmdArray);
+            // 3. 如果命令执行完成，则输出日志
             process.waitFor();
             log.info("CallShell: <{}> OK", shellString);
         } catch (Throwable e) {
             log.error("CallShell: readLine IOException, {}", shellString, e);
         } finally {
+            // 无论命令执行成功与否，都会销毁进程。
             if (null != process)
                 process.destroy();
         }

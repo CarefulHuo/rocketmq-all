@@ -21,13 +21,44 @@ import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.store.MessageFilter;
 
+/**
+ * 拉取请求的实体类
+ */
 public class PullRequest {
+
+    /**
+     * 拉取消息的请求命令
+     */
     private final RemotingCommand requestCommand;
+
+    /**
+     * 客户端通道，通过该通道向客户端发送响应
+     */
     private final Channel clientChannel;
+
+    /**
+     * 拉取消息的超时时间
+     */
     private final long timeoutMillis;
+
+    /**
+     * 挂起开始的时间戳，如果当前系统时间 >= suspendTimestamp + timeOutMillis ，则认为该请求已经超时
+     */
     private final long suspendTimestamp;
+
+    /**
+     * 待拉取消息的起始位置
+     */
     private final long pullFromThisOffset;
+
+    /**
+     * 订阅数据
+     */
     private final SubscriptionData subscriptionData;
+
+    /**
+     * 消息过滤器
+     */
     private final MessageFilter messageFilter;
 
     public PullRequest(RemotingCommand requestCommand, Channel clientChannel, long timeoutMillis, long suspendTimestamp,
