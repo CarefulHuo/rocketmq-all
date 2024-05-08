@@ -31,6 +31,9 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.common.subscription.SubscriptionGroupConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
+/**
+ * 消费组订阅配置信息
+ */
 public class SubscriptionGroupManager extends ConfigManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
 
@@ -38,7 +41,7 @@ public class SubscriptionGroupManager extends ConfigManager {
      * 消费者组订阅配置信息
      * key 为 消费者组名 value 为 消费者组订阅配置信息
      * <p>
-     *     用途：重试主题，消费者组订阅配置指定在消费缓慢时建议拉取的 Broker id
+     *     用途：重试主题、及消费者组订阅配置指定在消费缓慢时建议拉取的 Broker id
      * </p>
      */
     private final ConcurrentMap<String/* group name */, SubscriptionGroupConfig> subscriptionGroupTable =
@@ -55,6 +58,9 @@ public class SubscriptionGroupManager extends ConfigManager {
         this.init();
     }
 
+    /**
+     * 初始化并添加7个订阅组配置到subscriptionGroupTable中
+     */
     private void init() {
         {
             SubscriptionGroupConfig subscriptionGroupConfig = new SubscriptionGroupConfig();
@@ -145,6 +151,7 @@ public class SubscriptionGroupManager extends ConfigManager {
         if (null == subscriptionGroupConfig) {
             // 如果 Broker 设置了自动创建消费者组订阅信息 或者是系统内部消费者组名(订阅者组名)
             if (brokerController.getBrokerConfig().isAutoCreateSubscriptionGroup() || MixAll.isSysConsumerGroup(group)) {
+                // todo 创建消费者组订阅信息，除了 GroupName ，其他都可以使用默认值
                 subscriptionGroupConfig = new SubscriptionGroupConfig();
                 subscriptionGroupConfig.setGroupName(group);
                 SubscriptionGroupConfig preConfig = this.subscriptionGroupTable.putIfAbsent(group, subscriptionGroupConfig);

@@ -57,6 +57,21 @@ import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 主要用于 Broker 与 NameServer 之间的通信。该类提供了多个方法，用于Broker的注册、注销以及Topic信息的上报等操作。
+ * BrokerOuterAPI 类的构造函数初始化了NettyRemotingClient实例，并注册了RPCHook接口实现。
+ * start()方法启动NettyRemotingClient，shutdown()方法关闭NettyRemotingClient和brokerOuterExecutor线程池。
+ * fetchNameServerAddr()方法用于获取NameServer的地址列表，并更新Broker的NameServer地址。
+ * updateNameServerAddressList(final String addrs)方法用于更新NettyRemotingClient的NameServer地址列表。
+ * registerBrokerAll 方法用于向所有的NameServer注册Broker信息，包括Topic配置和FilterServer列表等。
+ * unregisterBrokerAll 方法用于向所有的NameServer注销Broker信息。
+ * needRegister方法用于判断是否需要向NameServer注册Broker。
+ * getAllTopicConfig方法用于获取指定Broker地址的所有Topic配置信息。
+ * getAllConsumerOffset方法用于获取指定Broker地址的所有消费者偏移量信息。
+ * getAllDelayOffset方法用于获取指定Broker地址的所有延迟消息偏移量信息。
+ * getAllSubscriptionGroupConfig方法用于获取指定Broker地址的所有订阅组配置信息。
+ * registerRPCHook方法用于注册RPCHook接口实现。
+ */
 public class BrokerOuterAPI {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
     private final RemotingClient remotingClient;

@@ -20,6 +20,9 @@ import java.util.Properties;
 import org.apache.rocketmq.common.message.MessageType;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 存储发送消息上下文信息的容器。它包含了如生产者组、主题、消息ID、队列ID、broker地址等详细信息
+ */
 public class SendMessageContext {
     private String producerGroup;
     private String topic;

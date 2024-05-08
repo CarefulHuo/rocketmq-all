@@ -27,7 +27,7 @@ public class ManyPullRequest {
     private final ArrayList<PullRequest> pullRequestList = new ArrayList<>();
 
     /**
-     * 往集合添加拉取请求
+     * 单个添加拉取请求
      * 加锁的原因：ReputMessageService 内部其实会持有 PullRequestHoldService 的引用，
      * 也就是在运行过程中，对于拉取任务，ReputMessageService 、PullRequestHoldService 处理的任务是同一个集合
      * @param pullRequest
@@ -36,6 +36,10 @@ public class ManyPullRequest {
         this.pullRequestList.add(pullRequest);
     }
 
+    /**
+     * 批量添加拉取请求
+     * @param many
+     */
     public synchronized void addPullRequest(final List<PullRequest> many) {
         this.pullRequestList.addAll(many);
     }

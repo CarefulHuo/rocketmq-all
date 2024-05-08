@@ -20,10 +20,23 @@ package org.apache.rocketmq.remoting.netty;
 import io.netty.channel.ChannelHandlerContext;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 异步处理请求实现
+ */
 public abstract class AsyncNettyRequestProcessor implements NettyRequestProcessor {
 
+    /**
+     * 异步处理请求
+     * @param ctx
+     * @param request 请求结果
+     * @param responseCallback 回调
+     * @throws Exception
+     */
     public void asyncProcessRequest(ChannelHandlerContext ctx, RemotingCommand request, RemotingResponseCallback responseCallback) throws Exception {
+        // 处理请求
         RemotingCommand response = processRequest(ctx, request);
+
+        // 执行回调
         responseCallback.callback(response);
     }
 }

@@ -23,6 +23,18 @@ import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 import org.apache.rocketmq.store.SelectMappedBufferResult;
 
+/**
+ * 该类继承自AbstractReferenceCounted并实现了FileRegion接口。它的主要作用是用于传输消息体，将消息从内存中的ByteBuffer和SelectMappedBufferResult传输到目标WritableByteChannel。
+ * OneMessageTransfer类有一个ByteBuffer类型的字段byteBufferHeader和一个SelectMappedBufferResult类型的字段selectMappedBufferResult，用于存储消息头和消息体。
+ * transferred字段用于记录已经传输的字节数。
+ * 构造函数OneMessageTransfer用于初始化byteBufferHeader和selectMappedBufferResult。
+ * position()方法返回当前传输的位置，即byteBufferHeader和selectMappedBufferResult中已经传输的字节数之和。
+ * transfered()方法返回已经传输的字节数。
+ * count()方法返回待传输的总字节数，即byteBufferHeader的剩余字节数加上selectMappedBufferResult的大小。
+ * transferTo()方法用于将消息体传输到目标WritableByteChannel，根据byteBufferHeader和selectMappedBufferResult的剩余字节数分别进行传输，直到所有字节都传输完成或没有剩余字节可传输。
+ * close()方法用于释放资源，调用deallocate()方法。
+ * deallocate()方法用于释放selectMappedBufferResult所占用的资源，通过调用selectMappedBufferResult.release()方法。
+ */
 public class OneMessageTransfer extends AbstractReferenceCounted implements FileRegion {
     private final ByteBuffer byteBufferHeader;
     private final SelectMappedBufferResult selectMappedBufferResult;

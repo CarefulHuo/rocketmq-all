@@ -24,6 +24,17 @@ import java.nio.channels.WritableByteChannel;
 import java.util.List;
 import org.apache.rocketmq.store.QueryMessageResult;
 
+/**
+ * 在Broker服务端将查询消息的结果传输给客户端。它实现了FileRegion接口，可以将数据通过transferTo方法传输到指定的WritableByteChannel中。
+ * QueryMessageTransfer类继承自AbstractReferenceCounted，表示它是一个可引用计数的对象，可以控制其生命周期。
+ * 构造函数QueryMessageTransfer接受一个ByteBuffer对象和一个QueryMessageResult对象作为参数，用于构建消息传输对象。
+ * position()方法返回当前传输的位置，即已经传输的字节数。
+ * transfered()方法返回已经传输的字节数。
+ * count()方法返回待传输的总字节数。
+ * transferTo()方法将数据传输到指定的WritableByteChannel中，直到没有剩余数据可传输。
+ * close()方法释放资源，调用deallocate()方法。
+ * deallocate()方法释放QueryMessageResult对象所占用的资源。
+ */
 public class QueryMessageTransfer extends AbstractReferenceCounted implements FileRegion {
     private final ByteBuffer byteBufferHeader;
     private final QueryMessageResult queryMessageResult;

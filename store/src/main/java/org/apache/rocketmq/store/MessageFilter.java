@@ -36,7 +36,8 @@ public interface MessageFilter {
         final ConsumeQueueExt.CqExtUnit cqExtUnit);
 
     /**
-     *
+     * 根据存储在 CommitLog 文件中的内存判断消息是否匹配
+     * todo 主要用于 SQL92 表达式模式服务的，根据消息属性实现类似数据库 SQL where 条件的过滤方式
      * match by message content which are stored in commit log.
      * <br>{@code msgBuffer} and {@code properties} are not all null.If invoked in store,
      * {@code properties} is null;If invoked in {@code PullRequestHoldService}, {@code msgBuffer} is null.

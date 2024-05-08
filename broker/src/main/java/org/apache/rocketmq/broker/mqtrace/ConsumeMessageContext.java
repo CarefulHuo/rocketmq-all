@@ -19,6 +19,9 @@ package org.apache.rocketmq.broker.mqtrace;
 import java.util.Map;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 存储消息消费上下文信息的类。它包含有关消费者、消息、队列和操作结果等信息
+ */
 public class ConsumeMessageContext {
     private String consumerGroup;
     private String topic;

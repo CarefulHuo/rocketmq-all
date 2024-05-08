@@ -54,15 +54,39 @@ import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.store.MessageExtBrokerInner;
 
+/**
+ * 负责处理消息的发送和处理流程，包括消息内容的检查、消息合法性的校验、注册和执行发送消息的钩子等。
+ * 该抽象类的具体实现类可以根据需要扩展和覆盖这些方法来实现特定的消息处理逻辑
+ */
 public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProcessor implements NettyRequestProcessor {
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
 
     protected final static int DLQ_NUMS_PER_GROUP = 1;
+
+    /**
+     * 保存了Broker的控制器，用于访问Broker的各种组件和配置。
+     */
     protected final BrokerController brokerController;
+
+    /**
+     * 用于生成随机数的Random对象。
+     */
     protected final Random random = new Random(System.currentTimeMillis());
+
+    /**
+     * 保存了 Broker 的存储主机地址。
+     */
     protected final SocketAddress storeHost;
+
+    /**
+     * 保存了发送消息的钩子列表，用于扩展消息发送的流程。
+     */
     private List<SendMessageHook> sendMessageHookList;
 
+    /**
+     * 构造方法：接收一个BrokerController对象作为参数，用于初始化brokerController成员变量和storeHost成员变量。
+     * @param brokerController
+     */
     public AbstractSendMessageProcessor(final BrokerController brokerController) {
         this.brokerController = brokerController;
         this.storeHost =
@@ -70,6 +94,12 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
                 .getNettyServerConfig().getListenPort());
     }
 
+    /**
+     * 组装发送的消息的内容
+     * @param ctx
+     * @param requestHeader
+     * @return
+     */
     protected SendMessageContext buildMsgContext(ChannelHandlerContext ctx,
         SendMessageRequestHeader requestHeader) {
         if (!this.hasSendMessageHook()) {
@@ -163,8 +193,17 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
         return response;
     }
 
+    /**
+     * 消息校验
+     * todo 发送消息的请求到达 Broker 后，会有一步 msgCheck 的过程，主要包括 Topic 是否包含在当前 Broker 中
+     * @param ctx
+     * @param requestHeader
+     * @param response
+     * @return
+     */
     protected RemotingCommand msgCheck(final ChannelHandlerContext ctx,
         final SendMessageRequestHeader requestHeader, final RemotingCommand response) {
+        // 1. 检查当前 Broker 是否有写入权限
         if (!PermName.isWriteable(this.brokerController.getBrokerConfig().getBrokerPermission())
             && this.brokerController.getTopicConfigManager().isOrderTopic(requestHeader.getTopic())) {
             response.setCode(ResponseCode.NO_PERMISSION);
