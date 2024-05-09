@@ -17,6 +17,11 @@
 
 package org.apache.rocketmq.broker.transaction.jdbc;
 
+/**
+ * 用于配置JDBC事务存储。
+ * 包含了JDBC驱动类名、数据库URL、数据库用户名和密码等属性，
+ * 并提供了相应的getter和setter方法用于获取和设置这些属性的值。这个配置类主要用于在Broker中使用JDBC事务日志存储时的配置。
+ */
 public class JDBCTransactionStoreConfig {
     private String jdbcDriverClass = "com.mysql.jdbc.Driver";
     private String jdbcURL = "jdbc:mysql://xxx.xxx.xxx.xxx:1000/xxx?useUnicode=true&characterEncoding=UTF-8";

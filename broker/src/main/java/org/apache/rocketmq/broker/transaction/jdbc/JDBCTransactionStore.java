@@ -34,6 +34,22 @@ import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 
+/**
+ * JDBCTransactionStore是一个实现了TransactionStore接口的类，用于存储事务消息的元数据。它通过JDBC连接数据库，并且支持事务的增删查改操作。
+ * JDBCTransactionStore类的成员变量包括一个JDBCTransactionStoreConfig对象（用于存储数据库连接配置信息），一个Connection对象（用于建立数据库连接），以及一个AtomicLong对象（用于记录总记录数）。
+ * JDBCTransactionStore类的构造函数接收一个JDBCTransactionStoreConfig对象作为参数，用于初始化数据库连接配置信息。
+ * open()方法用于打开数据库连接，并且自动创建数据库表。它首先尝试加载数据库驱动，然后根据配置信息创建数据库连接，并设置自动提交为false。接着，它会尝试计算总记录数，如果计算失败则尝试创建数据库表。最后，如果连接创建成功，则返回true，否则返回false。
+ * loadDriver()方法用于加载数据库驱动。它尝试根据配置信息中的驱动类名加载驱动，并返回加载结果。
+ * computeTotalRecords()方法用于计算总记录数。它创建一个Statement对象，并执行SQL查询语句，将结果保存在ResultSet对象中。接着，它从结果集中获取总记录数并将其保存在totalRecordsValue中，最后关闭Statement和ResultSet对象并返回计算结果。
+ * createDB()方法用于创建数据库表。它创建一个Statement对象，并执行SQL创建表语句，最后提交事务并返回创建结果。
+ * createTableSql()方法用于读取SQL创建表语句。它从类路径下的transaction.sql文件中读取语句并返回。
+ * close()方法用于关闭数据库连接。
+ * put()方法用于插入事务消息的元数据。它创建一个PreparedStatement对象，并根据传入的TransactionRecord对象列表执行批量插入操作，最后提交事务并返回插入结果。
+ * remove()方法用于删除事务消息的元数据。它创建一个PreparedStatement对象，并根据传入的主键列表执行批量删除操作，最后提交事务。
+ * traverse()方法用于遍历事务消息的元数据。当前实现返回空列表。
+ * totalRecords()方法用于获取事务消息的总记录数。它返回totalRecordsValue的值。
+ * minPK()和maxPK()方法用于获取最小和最大主键值。当前实现均返回0
+ */
 public class JDBCTransactionStore implements TransactionStore {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.TRANSACTION_LOGGER_NAME);
     private final JDBCTransactionStoreConfig jdbcTransactionStoreConfig;

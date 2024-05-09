@@ -22,9 +22,13 @@ import org.apache.rocketmq.store.MessageExtBrokerInner;
 import org.apache.rocketmq.store.PutMessageResult;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * 事务消息服务
+ */
 public interface TransactionalMessageService {
 
     /**
+     * 同步存储半步消息
      * Process prepare message, in common, we should put this message to storage service.
      *
      * @param messageInner Prepare(Half) message.
@@ -33,6 +37,7 @@ public interface TransactionalMessageService {
     PutMessageResult prepareMessage(MessageExtBrokerInner messageInner);
 
     /**
+     * 异步存储半步消息
      * Process prepare message in async manner, we should put this message to storage service
      *
      * @param messageInner Prepare(Half) message.
@@ -41,6 +46,7 @@ public interface TransactionalMessageService {
     CompletableFuture<PutMessageResult> asyncPrepareMessage(MessageExtBrokerInner messageInner);
 
     /**
+     * 提交或回滚此消息后，删除半消息，使用 OP 消息记录操作记录
      * Delete prepare message when this message has been committed or rolled back.
      *
      * @param messageExt
