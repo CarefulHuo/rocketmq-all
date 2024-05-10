@@ -18,9 +18,19 @@ package org.apache.rocketmq.broker.transaction;
 
 import org.apache.rocketmq.common.message.MessageExt;
 
+/**
+ * 查找消息的结果
+ */
 public class OperationResult {
+
+    /**
+     * 消息
+     */
     private MessageExt prepareMessage;
 
+    /**
+     * 查询结果的响应码
+     */
     private int responseCode;
 
     private String responseRemark;

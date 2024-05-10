@@ -53,6 +53,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TransactionalMessageBridge {
     private static final InternalLogger LOGGER = InnerLoggerFactory.getLogger(LoggerName.TRANSACTION_LOGGER_NAME);
 
+    /**
+     * Half 消息简易队列 到 OP 队列的映射
+     */
     private final ConcurrentHashMap<MessageQueue, MessageQueue> opQueueMap = new ConcurrentHashMap<>();
     private final BrokerController brokerController;
     private final MessageStore store;

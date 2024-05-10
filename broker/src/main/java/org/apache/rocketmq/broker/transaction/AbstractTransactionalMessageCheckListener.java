@@ -19,6 +19,7 @@ package org.apache.rocketmq.broker.transaction;
 import io.netty.channel.Channel;
 import java.util.Random;
 import org.apache.rocketmq.broker.BrokerController;
+import org.apache.rocketmq.client.impl.ClientRemotingProcessor;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -33,15 +34,32 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 事务消息回查回调
+ */
 public abstract class AbstractTransactionalMessageCheckListener {
+
+    /**
+     * 日志记录器，用于记录事务消息回查过程中的日志信息
+     */
     private static final InternalLogger LOGGER = InternalLoggerFactory.getLogger(LoggerName.TRANSACTION_LOGGER_NAME);
 
+    /**
+     * Broker 控制器，用于获取 Broker 的相关信息和操作
+     */
     private BrokerController brokerController;
 
     //queue nums of topic TRANS_CHECK_MAX_TIME_TOPIC
     protected final static int TCMT_QUEUE_NUMS = 1;
+
+    /**
+     * 随机数生成器，用于生成随机数。
+     */
     protected final Random random = new Random(System.currentTimeMillis());
 
+    /**
+     * 执行器服务，使用线程池来处理回查消息。
+     */
     private static ExecutorService executorService = new ThreadPoolExecutor(2, 5, 100, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(2000), new ThreadFactory() {
         @Override
         public Thread newThread(Runnable r) {
@@ -58,17 +76,35 @@ public abstract class AbstractTransactionalMessageCheckListener {
         this.brokerController = brokerController;
     }
 
+    /**
+     * 发送回查消息的方法
+     * @param msgExt 待回查的 Half 消息
+     * @throws Exception
+     */
     public void sendCheckMessage(MessageExt msgExt) throws Exception {
+        // 构建事务消息回查请求，请求核心参数包括：消息offsetId，消息Id(索引)，消息事务Id，事务消息队列中的偏移量(RMQ_SYS_TRANS_HALF_TOPIC)
         CheckTransactionStateRequestHeader checkTransactionStateRequestHeader = new CheckTransactionStateRequestHeader();
         checkTransactionStateRequestHeader.setCommitLogOffset(msgExt.getCommitLogOffset());
         checkTransactionStateRequestHeader.setOffsetMsgId(msgExt.getMsgId());
         checkTransactionStateRequestHeader.setMsgId(msgExt.getUserProperty(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX));
         checkTransactionStateRequestHeader.setTransactionId(checkTransactionStateRequestHeader.getMsgId());
         checkTransactionStateRequestHeader.setTranStateTableOffset(msgExt.getQueueOffset());
+
+        // 还原真实的 Topic 和 queueId，msgExt 会发送到生产者端，根据 msgExt 内容判断事务是否完成
         msgExt.setTopic(msgExt.getUserProperty(MessageConst.PROPERTY_REAL_TOPIC));
         msgExt.setQueueId(Integer.parseInt(msgExt.getUserProperty(MessageConst.PROPERTY_REAL_QUEUE_ID)));
         msgExt.setStoreSize(0);
+
+        // todo 取出发送消息时设置的生产者组，到达客户端实例后，会取出该组下的一个生产方获取事务状态
         String groupId = msgExt.getProperty(MessageConst.PROPERTY_PRODUCER_GROUP);
+
+        /**
+         * 根据生产者组获取任意一个生产者，通过与其连接发送事务回查消息，回查消息的请求者为 ( Broker 服务器)，接收者为( Client ，具体为消息生产者 )
+         * todo 生产方信息是心跳上报到 Broker 的
+         *
+         * 向 Producer 发送消息
+         * @see ClientRemotingProcessor#processRequest(io.netty.channel.ChannelHandlerContext, org.apache.rocketmq.remoting.protocol.RemotingCommand)
+         */
         Channel channel = brokerController.getProducerManager().getAvailableChannel(groupId);
         if (channel != null) {
             brokerController.getBroker2Client().checkProducerTransactionState(groupId, channel, checkTransactionStateRequestHeader, msgExt);
@@ -77,11 +113,17 @@ public abstract class AbstractTransactionalMessageCheckListener {
         }
     }
 
+    /**
+     * 处理半事务消息
+     * @param msgExt
+     */
     public void resolveHalfMsg(final MessageExt msgExt) {
+        // 事务回查线程池
         executorService.execute(new Runnable() {
             @Override
             public void run() {
                 try {
+                    // 发送事务回查消息
                     sendCheckMessage(msgExt);
                 } catch (Exception e) {
                     LOGGER.error("Send check message error!", e);
@@ -108,6 +150,7 @@ public abstract class AbstractTransactionalMessageCheckListener {
     }
 
     /**
+     * 为了避免无限制地返回查看，我们将丢弃已检查超过一定次数的消息。
      * In order to avoid check back unlimited, we will discard the message that have been checked more than a certain
      * number of times.
      *

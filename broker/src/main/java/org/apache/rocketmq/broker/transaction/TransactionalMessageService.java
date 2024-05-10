@@ -54,6 +54,7 @@ public interface TransactionalMessageService {
     boolean deletePrepareMessage(MessageExt messageExt);
 
     /**
+     * 根据消息物理偏移量，从 CommitLog 中查找该消息
      * Invoked to process commit prepare message.
      *
      * @param requestHeader Commit message request header.

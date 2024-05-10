@@ -30,6 +30,9 @@ import org.apache.rocketmq.store.MessageExtBrokerInner;
 import org.apache.rocketmq.store.PutMessageResult;
 import org.apache.rocketmq.store.PutMessageStatus;
 
+/**
+ * 事务消息回查回调实现
+ */
 public class DefaultTransactionalMessageCheckListener extends AbstractTransactionalMessageCheckListener {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.TRANSACTION_LOGGER_NAME);
 
@@ -42,7 +45,9 @@ public class DefaultTransactionalMessageCheckListener extends AbstractTransactio
         log.error("MsgExt:{} has been checked too many times, so discard it by moving it to system topic TRANS_CHECK_MAXTIME_TOPIC", msgExt);
 
         try {
+            // 封装 Broker 内部消息对象，用于将回查次数达到阈值(默认是 15 次)的 Half 消息放入 TRANS_CHECK_MAXTIME_TOPIC 主题下
             MessageExtBrokerInner brokerInner = toMessageExtBrokerInner(msgExt);
+            // 将消息追加到 CommitLog 中
             PutMessageResult putMessageResult = this.getBrokerController().getMessageStore().putMessage(brokerInner);
             if (putMessageResult != null && putMessageResult.getPutMessageStatus() == PutMessageStatus.PUT_OK) {
                 log.info("Put checked-too-many-time half message to TRANS_CHECK_MAXTIME_TOPIC OK. Restored in queueOffset={}, " +
@@ -56,10 +61,18 @@ public class DefaultTransactionalMessageCheckListener extends AbstractTransactio
 
     }
 
+    /**
+     * todo 将回查达到阈值或过期的半消息存入到 TRANS_CHECK_MAX_TIME_TOPIC 中，算作丢弃事务消息，这个消息不会被消费了
+     * @param msgExt
+     * @return
+     */
     private MessageExtBrokerInner toMessageExtBrokerInner(MessageExt msgExt) {
+        // 主题：TRANS_CHECK_MAX_TIME_TOPIC
+        // queueId：0
         TopicConfig topicConfig = this.getBrokerController().getTopicConfigManager().createTopicOfTranCheckMaxTime(TCMT_QUEUE_NUMS, PermName.PERM_READ | PermName.PERM_WRITE);
         int queueId = Math.abs(random.nextInt() % 99999999) % TCMT_QUEUE_NUMS;
         MessageExtBrokerInner inner = new MessageExtBrokerInner();
+        // 指定 Topic 为 TRANS_CHECK_MAX_TIME_TOPIC
         inner.setTopic(topicConfig.getTopicName());
         inner.setBody(msgExt.getBody());
         inner.setFlag(msgExt.getFlag());
