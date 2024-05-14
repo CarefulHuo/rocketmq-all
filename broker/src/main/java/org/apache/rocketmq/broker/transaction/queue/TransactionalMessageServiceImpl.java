@@ -365,11 +365,11 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
      * 读取 op 消息、解析 op 消息并填充 removeMap
      * Read op message, parse op message, and fill removeMap
      *
-     * @param removeMap Half message to be remove, key:halfOffset, value: opOffset.
-     * @param opQueue Op message queue.
-     * @param pullOffsetOfOp The begin offset of op message queue.
-     * @param miniOffset The current minimum offset of half message queue.
-     * @param doneOpOffset Stored op messages that have been processed.
+     * @param removeMap Half message to be remove, key:halfOffset, value: opOffset. 要删除的半消息，键：halfOffset，值：opOffset。
+     * @param opQueue Op message queue. op 消息队列
+     * @param pullOffsetOfOp The begin offset of op message queue. op 消息队列的开始偏移量。
+     * @param miniOffset The current minimum offset of half message queue. 消息队列当前最小的偏移量
+     * @param doneOpOffset Stored op messages that have been processed. 已处理的已存储操作消息。
      * @return Op message result.
      */
     private PullResult fillOpRemoveMap(HashMap<Long, Long> removeMap,
@@ -396,14 +396,23 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
             log.warn("The miss op offset={} in queue={} is empty, pullResult={}", pullOffsetOfOp, opQueue, pullResult);
             return pullResult;
         }
+
+        // 遍历拉取到的 op 队列中的消息，判断一下这些 op 消息对应的 half 消息是否处理过了(基于传入的 half 队列的消费进度 miniOffset)
         for (MessageExt opMessageExt : opMsg) {
+
+            // op 队列中存储的内容是 half 队列事务消息已经 Commit 和 rollback 的消息的逻辑偏移量 Offset
             Long queueOffset = getLong(new String(opMessageExt.getBody(), TransactionalMessageUtil.charset));
+
             log.debug("Topic: {} tags: {}, OpOffset: {}, HalfOffset: {}", opMessageExt.getTopic(),
                 opMessageExt.getTags(), opMessageExt.getQueueOffset(), queueOffset);
+
+            // 如果该消息是个删除操作
             if (TransactionalMessageUtil.REMOVETAG.equals(opMessageExt.getTags())) {
                 if (queueOffset < miniOffset) {
+                    // 消息进度小于消息队列消费进度，需要校验，则重新添加
                     doneOpOffset.add(opMessageExt.getQueueOffset());
                 } else {
+                    // todo 不需要校验，存储已经完成的 half 消息的逻辑偏移量到 op 消息的逻辑偏移量
                     removeMap.put(queueOffset, opMessageExt.getQueueOffset());
                 }
             } else {
@@ -467,6 +476,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
     }
 
     /**
+     * 从 half 主题中拉取 half 消息
      * Read half message from Half Topic
      *
      * @param mq Target message queue, in this method, it means the half message queue.
@@ -479,6 +489,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
     }
 
     /**
+     * 从 op 主题读取 op 队列中的消息，默认最大 32 条
      * Read op message from Op Topic
      *
      * @param mq Target Message Queue
@@ -526,6 +537,11 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
 
     }
 
+    /**
+     * 根据消息队列获取对应的 op 消息队列
+     * @param messageQueue
+     * @return
+     */
     private MessageQueue getOpQueue(MessageQueue messageQueue) {
         // 根据消息队列获取对应的 OP 队列
         MessageQueue opQueue = opQueueMap.get(messageQueue);
@@ -543,9 +559,17 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
 
     }
 
+    /**
+     * 拉取半消息
+     *
+     * @param messageQueue 消息队列
+     * @param offset       偏移量
+     * @return
+     */
     private GetResult getHalfMsg(MessageQueue messageQueue, long offset) {
         GetResult getResult = new GetResult();
 
+        // 拉取半消息
         PullResult result = pullHalfMsg(messageQueue, offset, PULL_MSG_RETRY_NUMBER);
         getResult.setPullResult(result);
         List<MessageExt> messageExts = result.getMsgFoundList();
@@ -558,6 +582,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
 
     private OperationResult getHalfMessageByOffset(long commitLogOffset) {
         OperationResult response = new OperationResult();
+        // 根据物理偏移量获取消息
         MessageExt messageExt = this.transactionalMessageBridge.lookMessageByOffset(commitLogOffset);
         if (messageExt != null) {
             response.setPrepareMessage(messageExt);
@@ -571,6 +596,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
 
     @Override
     public boolean deletePrepareMessage(MessageExt msgExt) {
+        // 存储op消息，将 op消息 存储到 RMQ_SYS_TRANS_OP_HALF_TOPIC 主题下，表示该事务消息已经处理了(包括提交和回滚)
         if (this.transactionalMessageBridge.putOpMessage(msgExt, TransactionalMessageUtil.REMOVETAG)) {
             log.debug("Transaction op message write successfully. messageId={}, queueId={} msgExt:{}", msgExt.getMsgId(), msgExt.getQueueId(), msgExt);
             return true;
@@ -580,11 +606,25 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
         }
     }
 
+    /**
+     * 根据消息物理偏移量查找消息，这个过程有两步
+     * 1. 先根据物理偏移量读取 4 个字节的内容，该内容是一个消息的大小 size
+     * 2. 根据物理偏移量读取 size 大小的内容，此时就是消息
+     * @param requestHeader Commit message request header.
+     * @return
+     */
     @Override
     public OperationResult commitMessage(EndTransactionRequestHeader requestHeader) {
         return getHalfMessageByOffset(requestHeader.getCommitLogOffset());
     }
 
+    /**
+     * 根据消息物理偏移量查询消息，这个过程有两步
+     * 1. 先根据物理偏移量读取 4 个字节的内容，该内容就是一个消息的大小 size
+     * 2. 根据物理偏移量读取 size 大小的内容，此时就是消息内容
+     * @param requestHeader Prepare message request header.
+     * @return
+     */
     @Override
     public OperationResult rollbackMessage(EndTransactionRequestHeader requestHeader) {
         return getHalfMessageByOffset(requestHeader.getCommitLogOffset());

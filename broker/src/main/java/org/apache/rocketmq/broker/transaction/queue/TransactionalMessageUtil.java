@@ -21,18 +21,38 @@ import org.apache.rocketmq.common.topic.TopicValidator;
 
 import java.nio.charset.Charset;
 
+/**
+ * 事务消息工具类
+ */
 public class TransactionalMessageUtil {
+
+    /**
+     * 删除操作
+     */
     public static final String REMOVETAG = "d";
     public static Charset charset = Charset.forName("utf-8");
 
+    /**
+     * 返回操作事务消息主题：RMQ_SYS_TRANS_OP_HALF_TOPIC
+     * @return
+     */
     public static String buildOpTopic() {
         return TopicValidator.RMQ_SYS_TRANS_OP_HALF_TOPIC;
     }
 
+    /**
+     * 返回半消息的主题：RMQ_SYS_TRANS_HALF_TOPIC
+     * @return
+     */
     public static String buildHalfTopic() {
         return TopicValidator.RMQ_SYS_TRANS_HALF_TOPIC;
     }
 
+    /**
+     * 返回消费组
+     * todo 注意：这个是内部消费组，专门用来消费{@link TopicValidator.RMQ_SYS_TRANS_OP_HALF_TOPIC} 和 {@link TopicValidator.RMQ_SYS_TRANS_HALF_TOPIC} 主题下的消息
+     * @return
+     */
     public static String buildConsumerGroup() {
         return MixAll.CID_SYS_RMQ_TRANS;
     }

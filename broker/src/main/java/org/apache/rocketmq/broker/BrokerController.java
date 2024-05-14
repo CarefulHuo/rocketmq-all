@@ -146,9 +146,21 @@ public class BrokerController {
     private final BrokerStatsManager brokerStatsManager;
     private final List<SendMessageHook> sendMessageHookList = new ArrayList<SendMessageHook>();
     private final List<ConsumeMessageHook> consumeMessageHookList = new ArrayList<ConsumeMessageHook>();
+
+    /**
+     * todo 持有的消息存储服务
+     */
     private MessageStore messageStore;
+
+    /**
+     * 远程通信服务端实现类
+     */
     private RemotingServer remotingServer;
     private RemotingServer fastRemotingServer;
+
+    /**
+     * 持有的 Topic 配置管理对象
+     */
     private TopicConfigManager topicConfigManager;
     private ExecutorService sendMessageExecutor;
     private ExecutorService pullMessageExecutor;
@@ -166,6 +178,10 @@ public class BrokerController {
     private Configuration configuration;
     private FileWatchService fileWatchService;
     private TransactionalMessageCheckService transactionalMessageCheckService;
+
+    /**
+     * todo 事务消息服务
+     */
     private TransactionalMessageService transactionalMessageService;
     private AbstractTransactionalMessageCheckListener transactionalMessageCheckListener;
     private Future<?> slaveSyncFuture;
@@ -221,23 +237,12 @@ public class BrokerController {
         this.consumerManager = new ConsumerManager(this.consumerIdsChangeListener);
 
         /**
-         * 消费者端过滤消息的过滤器
+         * 消费者端过滤消息的过滤器、生产者管理器
+         * todo ClientHousekeepingService、Broker2Client 含义未知
          */
         this.consumerFilterManager = new ConsumerFilterManager(this);
-
-        /**
-         * 生产者管理器
-         */
         this.producerManager = new ProducerManager();
-
-        /**
-         * todo 疑惑
-         */
         this.clientHousekeepingService = new ClientHousekeepingService(this);
-
-        /**
-         * todo 疑惑
-         */
         this.broker2Client = new Broker2Client(this);
 
         /**
@@ -255,6 +260,10 @@ public class BrokerController {
          * 10 从节点同步
          */
         this.slaveSynchronize = new SlaveSynchronize(this);
+
+        /**
+         * 线程池队列
+         */
         // 发送消息线程池队列
         this.sendThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getSendThreadPoolQueueCapacity());
         // 拉取消息线程池队列
@@ -301,6 +310,12 @@ public class BrokerController {
         return queryThreadPoolQueue;
     }
 
+    /**
+     * BrokerController 初始化
+     * @return
+     * @throws CloneNotSupportedException
+     * @see BrokerStartup#start(org.apache.rocketmq.broker.BrokerController)
+     */
     public boolean initialize() throws CloneNotSupportedException {
         // 1. 主要加载 Topic 的基本属性文件，如队列信息：org.apache.rocketmq.broker.topic.TopicConfigManager.topicConfigTable
         boolean result = this.topicConfigManager.load();

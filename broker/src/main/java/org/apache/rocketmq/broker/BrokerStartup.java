@@ -48,12 +48,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_ENABLE;
 
+/**
+ * Broker 启动
+ */
 public class BrokerStartup {
     public static Properties properties = null;
     public static CommandLine commandLine = null;
     public static String configFile = null;
     public static InternalLogger log;
 
+    /**
+     * broker 启动
+     * @param args
+     */
     public static void main(String[] args) {
         start(createBrokerController(args));
     }
