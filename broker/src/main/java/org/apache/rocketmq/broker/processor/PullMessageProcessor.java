@@ -189,10 +189,18 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             RocketMQ 消息过滤有两种模式
             1. 类过滤 ClassFilterModel 和表达式模式(Expression)，其中表达式模式又可分为 ExpressionType.TAG 和 ExpressionType.SQL92
             2. TAG 过滤，在服务端拉取时，会根据 ConsumeQueue 条目中存储的 tag hashCode 与订阅的 tag(HashCode 集合)进行匹配，匹配成功则放入待返回消息结果中，然后在消息消费端(消费者，还会对消息的订阅消息字符串再进行一次过滤)
-
+               为什么需要进行两次过滤？
+               2.1 为什么不在服务端直接对消息订阅 tag 进行匹配？
+                   主要就还是为了提高服务端消费队列(文件存储)的性能，如果直接进行字符串匹配，那么 consumerqueue 条目就无法设置为定长结构，检索 consuequeue 就不方便
+               2.2 为什么不只在消费端进行过滤呢？
+                   在服务端根据 Tag Hash 可以快速过滤掉不符合过滤条件的消息索引，尽可能避免从 CommitLog 获取消息
          */
 
+
+        /*--------------------------------构建过滤器------------------------*/
+        // Tag 过滤消息
         SubscriptionData subscriptionData = null;
+        // ConsumerFilterData 过滤消息对象
         ConsumerFilterData consumerFilterData = null;
         if (hasSubscriptionFlag) {
             try {
