@@ -231,7 +231,7 @@ public class BrokerController {
         this.consumerIdsChangeListener = new DefaultConsumerIdsChangeListener(this);
 
         /**
-         *  7. 维护消费者上报信息
+         *  7. 维护消费者上报到 Broker 的信息
          *  消费者管理---》消费者组的信息---》消费者组的信息中包含订阅 Topic 的消费者订阅信息，该消费者订阅信息以最后一个消费者的订阅信息为准，忽略 tag 不一致
          */
         this.consumerManager = new ConsumerManager(this.consumerIdsChangeListener);

@@ -69,6 +69,9 @@ import org.apache.rocketmq.store.PutMessageResult;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 拉取消息处理
+ */
 public class PullMessageProcessor extends AsyncNettyRequestProcessor implements NettyRequestProcessor {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
     private final BrokerController brokerController;
@@ -89,10 +92,23 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
         return false;
     }
 
-    private RemotingCommand processRequest(final Channel channel, RemotingCommand request, boolean brokerAllowSuspend)
+    /**
+     * 处理拉取消息请求
+     * @param channel 网络通道
+     * @param request 消息拉取请求
+     * @param brokerAllowSuspend 是否允许挂起，也就是是否允许在未找到消息时暂时挂起线程，第一次调用时默认为 true
+     * @return
+     * @throws RemotingCommandException
+     */
+    private RemotingCommand processRequest(
+            final Channel channel, // 网络通道
+            RemotingCommand request,
+            boolean brokerAllowSuspend)
         throws RemotingCommandException {
         RemotingCommand response = RemotingCommand.createResponseCommand(PullMessageResponseHeader.class);
         final PullMessageResponseHeader responseHeader = (PullMessageResponseHeader) response.readCustomHeader();
+
+        // 解码拉取消息请求头
         final PullMessageRequestHeader requestHeader =
             (PullMessageRequestHeader) request.decodeCommandCustomHeader(PullMessageRequestHeader.class);
 
@@ -100,32 +116,49 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
 
         log.debug("receive PullMessage request command, {}", request);
 
+        // 校验 Broker 是否可读，不可读，就不能拉取消息了
         if (!PermName.isReadable(this.brokerController.getBrokerConfig().getBrokerPermission())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark(String.format("the broker[%s] pulling message is forbidden", this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
 
+        /*-- 消费者向 Broker 发起消息拉取请求时，如果 Broker 上并没有存在该消费组的订阅消息时，
+             如果不允许自动创建(autoCreateSubscriptionGroup 为 false)，默认为 true，则不会返回消息给客户端 --*/
+        // todo 校验 Consumer 分组配置是否存在。当不存在时。如果允许自动创建则根据当前 ConsumerGroup 创建一个基本的消费组配置信息。
+        // 目前只有控制台可以修改，程序中都是自动创建的
+        // todo 消费组是否运行自动创建，一般公司会禁止自动创建主题，消费组
         SubscriptionGroupConfig subscriptionGroupConfig =
             this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getConsumerGroup());
+
+        // todo 如果还是为空，则不能拉取消息，直接报错，订阅组不存在
+        // todo 如果不允许自动创建订阅组消息，必须手动向 Broker 创建订阅组信息，否则不能拉取消息
+        // todo 即某个消费组下的消费者从 Broker 拉取消息，那么该 Broker 必须有消费组的信息，不然无法拉取消息。
+        //  FIXME: 集群扩容时，需要同步在集群上的 Topic.json subscriptionGroup.json 文件
         if (null == subscriptionGroupConfig) {
             response.setCode(ResponseCode.SUBSCRIPTION_GROUP_NOT_EXIST);
             response.setRemark(String.format("subscription group [%s] does not exist, %s", requestHeader.getConsumerGroup(), FAQUrl.suggestTodo(FAQUrl.SUBSCRIPTION_GROUP_NOT_EXIST)));
             return response;
         }
 
+        // 校验 Consumer 分组是否可以消费，默认都是可以消费的，除非通过控制台修改
         if (!subscriptionGroupConfig.isConsumeEnable()) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("subscription group no permission, " + requestHeader.getConsumerGroup());
             return response;
         }
 
+        // todo 没有消息时，是否可以挂起请求
         final boolean hasSuspendFlag = PullSysFlag.hasSuspendFlag(requestHeader.getSysFlag());
+        // todo 是否提交消费进度(即消费端上报本地的消费进度过来了，要不要接受)
         final boolean hasCommitOffsetFlag = PullSysFlag.hasCommitOffsetFlag(requestHeader.getSysFlag());
+        // todo 是否过滤订阅表达式(subscription)
         final boolean hasSubscriptionFlag = PullSysFlag.hasSubscriptionFlag(requestHeader.getSysFlag());
 
+        // todo 如果没有消息时挂起请求，则获取挂起请求时长
         final long suspendTimeoutMillisLong = hasSuspendFlag ? requestHeader.getSuspendTimeoutMillis() : 0;
 
+        // todo 校验 Topic 配置存在
         TopicConfig topicConfig = this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
         if (null == topicConfig) {
             log.error("the topic {} not exist, consumer: {}", requestHeader.getTopic(), RemotingHelper.parseChannelRemoteAddr(channel));
@@ -134,12 +167,14 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             return response;
         }
 
+        // 校验 Topic 配置权限可读
         if (!PermName.isReadable(topicConfig.getPerm())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("the topic[" + requestHeader.getTopic() + "] pulling message is forbidden");
             return response;
         }
 
+        // todo 校验读取队列在 Topic 配置-队列范围内
         if (requestHeader.getQueueId() < 0 || requestHeader.getQueueId() >= topicConfig.getReadQueueNums()) {
             String errorInfo = String.format("queueId[%d] is illegal, topic:[%s] topicConfig.readQueueNums:[%d] consumer:[%s]",
                 requestHeader.getQueueId(), requestHeader.getTopic(), topicConfig.getReadQueueNums(), channel.remoteAddress());
@@ -148,6 +183,14 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             response.setRemark(errorInfo);
             return response;
         }
+
+        /*-------------------------------构建过滤器--------------------------*/
+        /*
+            RocketMQ 消息过滤有两种模式
+            1. 类过滤 ClassFilterModel 和表达式模式(Expression)，其中表达式模式又可分为 ExpressionType.TAG 和 ExpressionType.SQL92
+            2. TAG 过滤，在服务端拉取时，会根据 ConsumeQueue 条目中存储的 tag hashCode 与订阅的 tag(HashCode 集合)进行匹配，匹配成功则放入待返回消息结果中，然后在消息消费端(消费者，还会对消息的订阅消息字符串再进行一次过滤)
+
+         */
 
         SubscriptionData subscriptionData = null;
         ConsumerFilterData consumerFilterData = null;
