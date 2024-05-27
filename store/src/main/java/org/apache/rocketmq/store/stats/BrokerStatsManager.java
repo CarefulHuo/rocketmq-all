@@ -27,6 +27,16 @@ import org.apache.rocketmq.common.stats.MomentStatsItemSet;
 import org.apache.rocketmq.common.stats.StatsItem;
 import org.apache.rocketmq.common.stats.StatsItemSet;
 
+/**
+ * 用于管理消息队列Broker的统计信息。下面是对该类中一些重要方法和属性的简要解释：
+ * BrokerStatsManager类的实例用于管理消息队列Broker的各种统计信息，包括消息的发送、接收、存储和消费等。
+ * 该类有一个静态常量TOPIC_PUT_NUMS，表示主题消息的发送数量；还有其他类似的常量用于表示不同的统计指标。
+ * BrokerStatsManager类有一个HashMap类型的statsTable属性，用于存储各种统计指标的数据。
+ * 该类有一个构造函数，用于初始化statsTable，并为每个统计指标创建一个StatsItemSet对象。
+ * BrokerStatsManager类提供了多个方法，用于增加、获取和删除统计指标的数据。
+ * 该类还提供了一些定时任务相关的方法，如start()和shutdown()，用于启动和关闭定时任务。
+ * 总之，BrokerStatsManager类是RocketMQ中用于管理消息队列Broker的统计信息的核心类。它通过StatsItemSet对象来管理每个统计指标的数据，并提供了方便的方法来增加、获取和删除统计指标的数据。
+ */
 public class BrokerStatsManager {
 
     public static final String TOPIC_PUT_NUMS = "TOPIC_PUT_NUMS";

@@ -59,7 +59,7 @@ public class SubscriptionGroupConfig {
 
     /**
      * 当消息消费缓慢时，将转向 Broker 的服务器上拉取消息，表示是从服务器
-     * todo 疑惑
+     * todo 默认为 1，表示从服务器
      */
     private long whichBrokerWhenConsumeSlowly = 1;
 

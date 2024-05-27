@@ -57,6 +57,9 @@ import org.apache.rocketmq.store.PutMessageResult;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * Broker 端处理发送请求类
+ */
 public class SendMessageProcessor extends AbstractSendMessageProcessor implements NettyRequestProcessor {
 
     private List<ConsumeMessageHook> consumeMessageHookList;
@@ -65,11 +68,19 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         super(brokerController);
     }
 
+    /**
+     * 处理消息生产者发送的消息请求
+     * @param ctx Netty ctx
+     * @param request 请求对象
+     * @return
+     * @throws RemotingCommandException
+     */
     @Override
     public RemotingCommand processRequest(ChannelHandlerContext ctx,
                                           RemotingCommand request) throws RemotingCommandException {
         RemotingCommand response = null;
         try {
+            // 异步处理生产者发送来的请求
             response = asyncProcessRequest(ctx, request).get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("process SendMessage error, request : " + request.toString(), e);
@@ -79,88 +90,152 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
 
     @Override
     public void asyncProcessRequest(ChannelHandlerContext ctx, RemotingCommand request, RemotingResponseCallback responseCallback) throws Exception {
+        // 异步处理请求
         asyncProcessRequest(ctx, request).thenAcceptAsync(responseCallback::callback, this.brokerController.getSendMessageExecutor());
     }
 
+    /**
+     * 异步处理请求
+     * todo 特别说明
+     * {@link SendMessageProcessor#sendMessage(io.netty.channel.ChannelHandlerContext, org.apache.rocketmq.remoting.protocol.RemotingCommand, org.apache.rocketmq.broker.mqtrace.SendMessageContext, org.apache.rocketmq.common.protocol.header.SendMessageRequestHeader)}
+     * 上述方法是完全同步执行的，因此上述方法在新版本中已经被废弃了，处理消息都用 asyncProcessRequest()方法，充分利用异步特性，尽可能减少线程等待时间
+     *
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     public CompletableFuture<RemotingCommand> asyncProcessRequest(ChannelHandlerContext ctx,
                                                                   RemotingCommand request) throws RemotingCommandException {
         final SendMessageContext mqtraceContext;
+        // 根据请求码，确定是什么请求
         switch (request.getCode()) {
+            // 消费重试请求
             case RequestCode.CONSUMER_SEND_MSG_BACK:
                 return this.asyncConsumerSendMsgBack(ctx, request);
+            // 非重试请求(可能也是重试请求，只不过没有用请求码特别指定，但内部处理有兼顾)
+            // 对应的请求码：
+            // RequestCode.SEND_BATCH_MESSAGE:
+            // RequestCode.SEND_MESSAGE_V2:
+            // RequestCode.SEND_MESSAGE:
             default:
+                // todo 解析请求，根据不同的请求码进行解析
                 SendMessageRequestHeader requestHeader = parseRequestHeader(request);
                 if (requestHeader == null) {
                     return CompletableFuture.completedFuture(null);
                 }
+
+                // 构建消息内容
                 mqtraceContext = buildMsgContext(ctx, requestHeader);
+
+                // hook 处理发送消息前逻辑
                 this.executeSendMessageHookBefore(ctx, request, mqtraceContext);
+
+                // 批量发送消息逻辑
                 if (requestHeader.isBatch()) {
                     return this.asyncSendBatchMessage(ctx, request, mqtraceContext, requestHeader);
+
+                    // 非批量发送消息
+                    // todo 包含对事务消息，重试消息以及是否触发死信队列的处理
                 } else {
                     return this.asyncSendMessage(ctx, request, mqtraceContext, requestHeader);
                 }
         }
     }
 
+    /**
+     * 拒绝请求
+     * @return
+     */
     @Override
     public boolean rejectRequest() {
+        // 判断操作系统 PageCache 是否繁忙，如果是，则返回 true
         return this.brokerController.getMessageStore().isOSPageCacheBusy() ||
+                // 如果开启 TransientStorePoolDeficient ，判断堆外内存池是否还有堆外内存可用
             this.brokerController.getMessageStore().isTransientStorePoolDeficient();
     }
 
+    /**
+     * 处理 Consumer 的重试请求
+     *
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private CompletableFuture<RemotingCommand> asyncConsumerSendMsgBack(ChannelHandlerContext ctx,
                                                                         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
+
+        // 解码重试消息请求
         final ConsumerSendMsgBackRequestHeader requestHeader =
                 (ConsumerSendMsgBackRequestHeader)request.decodeCommandCustomHeader(ConsumerSendMsgBackRequestHeader.class);
+
+
         String namespace = NamespaceUtil.getNamespaceFromResource(requestHeader.getGroup());
         if (this.hasConsumeMessageHook() && !UtilAll.isBlank(requestHeader.getOriginMsgId())) {
             ConsumeMessageContext context = buildConsumeMessageContext(namespace, requestHeader, request);
             this.executeConsumeMessageHookAfter(context);
         }
+
+        // 获取消费组的订阅配置信息
         SubscriptionGroupConfig subscriptionGroupConfig =
             this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getGroup());
+        // 如果订阅配置信息不存在，则返回订阅配置不存在的错误
         if (null == subscriptionGroupConfig) {
             response.setCode(ResponseCode.SUBSCRIPTION_GROUP_NOT_EXIST);
             response.setRemark("subscription group not exist, " + requestHeader.getGroup() + " "
                 + FAQUrl.suggestTodo(FAQUrl.SUBSCRIPTION_GROUP_NOT_EXIST));
             return CompletableFuture.completedFuture(response);
         }
+        // 如果没有写权限，则返回没有写权限的错误
         if (!PermName.isWriteable(this.brokerController.getBrokerConfig().getBrokerPermission())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("the broker[" + this.brokerController.getBrokerConfig().getBrokerIP1() + "] sending message is forbidden");
             return CompletableFuture.completedFuture(response);
         }
 
+        // 如果重试队列数量为 0，则直接返回成功
         if (subscriptionGroupConfig.getRetryQueueNums() <= 0) {
             response.setCode(ResponseCode.SUCCESS);
             response.setRemark(null);
             return CompletableFuture.completedFuture(response);
         }
 
+        // 1. todo 更新消息的 Topic 为 %RETRY% + group
         String newTopic = MixAll.getRetryTopic(requestHeader.getGroup());
+
+        // 2. todo 计算 queueId (重试队列，队列数为 1)
         int queueIdInt = Math.abs(this.random.nextInt() % 99999999) % subscriptionGroupConfig.getRetryQueueNums();
         int topicSysFlag = 0;
         if (requestHeader.isUnitMode()) {
             topicSysFlag = TopicSysFlag.buildSysFlag(false, true);
         }
 
+        // todo 创建重试 Topic，存在则直接返回，
+        //  可以知道，在哪个 Broker 上创建重试队列和具体的消息队列有关，即重试队列创建在消息队列所在的 Broker 上。
+        //  可以知道，消息重试的消费主题是 %RETRY% + group，基于消费组，而不是每一个主题都有一个重试主题，而是每一个消费组都有一个重试主题。
         TopicConfig topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(
-            newTopic,
-            subscriptionGroupConfig.getRetryQueueNums(),
-            PermName.PERM_WRITE | PermName.PERM_READ, topicSysFlag);
+            newTopic, // 主题
+            subscriptionGroupConfig.getRetryQueueNums(), // 重试队列个数为 1
+            PermName.PERM_WRITE | PermName.PERM_READ, // 权限
+            topicSysFlag);
+
+        // 如果 TopicConfig 为 null ，则返回主题不存在的错误
         if (null == topicConfig) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
             response.setRemark("topic[" + newTopic + "] not exist");
             return CompletableFuture.completedFuture(response);
         }
 
+        // topicConfig 是否具备写权限
         if (!PermName.isWriteable(topicConfig.getPerm())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark(String.format("the topic[%s] sending message is forbidden", newTopic));
             return CompletableFuture.completedFuture(response);
         }
+
+        // 根据偏移量从 CommitLog 中取消息
         MessageExt msgExt = this.brokerController.getMessageStore().lookMessageByOffset(requestHeader.getOffset());
         if (null == msgExt) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
@@ -168,39 +243,69 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             return CompletableFuture.completedFuture(response);
         }
 
+        // todo 将原始 Topic 保存到消息的 RETRY_TOPIC 属性中。注意：第一次重试消息，这里为 null，因为重试主题刚刚才创建
         final String retryTopic = msgExt.getProperty(MessageConst.PROPERTY_RETRY_TOPIC);
         if (null == retryTopic) {
+            // RETRY_TOPIC 属性保存消息的原Topic
             MessageAccessor.putProperty(msgExt, MessageConst.PROPERTY_RETRY_TOPIC, msgExt.getTopic());
         }
         msgExt.setWaitStoreMsgOK(false);
 
+        // 获取延迟级别，目前都是  0
+        // 后续会根据重试次数，调整延迟级别
         int delayLevel = requestHeader.getDelayLevel();
 
+        // todo 获取配置的消息重试次数
+        //  如果 MQ的版本 小于 V3_4_9，则默认重试次数为 16
+        //  如果 MQ的版本 大于等于 V3_4_9，则获取请求头中的最大重试次数
         int maxReconsumeTimes = subscriptionGroupConfig.getRetryMaxTimes();
         if (request.getVersion() >= MQVersion.Version.V3_4_9.ordinal()) {
             maxReconsumeTimes = requestHeader.getMaxReconsumeTimes();
         }
 
-        if (msgExt.getReconsumeTimes() >= maxReconsumeTimes 
-            || delayLevel < 0) {
+        // 如果消息重试次数 >= 16 (默认)。更新消息的 Topic 为死信队列的 Topic："%DLQ%" + group , 消费队列为 1 (死信队列只有一个消费队列)。也就是消息可以被投递 1 + 15次
+        // todo 死信：以 %DLQ% + group 为 Topic 名，存到 CommitLog 中，存到死信队列中的信息，就不会被 Consumer 消费了
+        if (msgExt.getReconsumeTimes() >= maxReconsumeTimes || delayLevel < 0) {
+
+            // 根据消费组，获取死信队列名称，死信队列名称即：%DLQ% + group
             newTopic = MixAll.getDLQTopic(requestHeader.getGroup());
+
+            // 默认死信队列数为 1
             queueIdInt = Math.abs(this.random.nextInt() % 99999999) % DLQ_NUMS_PER_GROUP;
 
-            topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(newTopic,
-                    DLQ_NUMS_PER_GROUP,
-                    PermName.PERM_WRITE, 0);
+            // todo 创建死信 Topic
+            topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(
+                    newTopic,
+                    DLQ_NUMS_PER_GROUP, // 死信队列数为 1
+                    PermName.PERM_WRITE,// 只写权限
+                    0);
+
+            // TopicConfig 为 null ，则返回死信主题不存在的错误
             if (null == topicConfig) {
                 response.setCode(ResponseCode.SYSTEM_ERROR);
                 response.setRemark("topic[" + newTopic + "] not exist");
                 return CompletableFuture.completedFuture(response);
             }
+
+            /**
+             * todo 重试--延迟
+             * 1. 如果没有变成死信，计算消息的延迟级别，作为一个新的延迟消息存到 CommitLog 中，当该消息到了消费时间点事会被 Consumer 重新消费的。
+             * 2. 该消息以新的 Topic 名：%RETRY% + group 存到 CommitLog 中作为延迟消息
+             * todo 延迟时间
+             * 1. 重试消息发到 Broker 中，被作为一个新的延迟消息存到 CommitLog 中，当该消息到了消费时间点就会被Consumer重新消费
+             * 2. 消息重试 16 次才会被丢到 死信队列中，才不会被消费，那其余 15 次的消息，都是延迟消息，每次延迟是多久呢？
+             * 3. 消息的延迟级别是受重试次数(ReconsumeTimes) 影响的，重试次数越大，延迟越久。
+             */
         } else {
+            // delayLevel 其实每次都为 0 ，所以这里相当于是重试次数 + 3
             if (0 == delayLevel) {
                 delayLevel = 3 + msgExt.getReconsumeTimes();
             }
+            // 设置延迟级别
             msgExt.setDelayTimeLevel(delayLevel);
         }
 
+        // 复制原来消息，重新生成一个 Msg，将新消息丢给 BrokerController 中，然后存储到 CommitLog 中进行存储
         MessageExtBrokerInner msgInner = new MessageExtBrokerInner();
         msgInner.setTopic(newTopic);
         msgInner.setBody(msgExt.getBody());

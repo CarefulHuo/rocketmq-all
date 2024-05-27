@@ -212,6 +212,12 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
             return response;
         }
 
+        /**
+         * 2. Topic 的校验(todo 主要是针对默认主题，默认主题不能发送消息，仅供路由查找)
+         * 2.1 检查 Topic 是否可以被发送
+         * 2.2 找不到 Topic 配置，则进行创建
+         *
+         */
         if (!TopicValidator.validateTopic(requestHeader.getTopic(), response)) {
             return response;
         }
@@ -219,11 +225,16 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
             return response;
         }
 
+        // 3. 在 Broker 端存储主题的配置信息，并定时上报到 NameSrv
+        // 3.1 检查下发送消息的 Topic 在 Broker 本地有没有
         TopicConfig topicConfig =
             this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
+
+        // 3.2 todo 没有，则尝试自动创建 Topic ，实际就是创建一个 TopicConfig 对象，存放到本地 Map，并同步到 NameSrv
         if (null == topicConfig) {
             int topicSysFlag = 0;
             if (requestHeader.isUnitMode()) {
+                // todo 重试主题
                 if (requestHeader.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
                     topicSysFlag = TopicSysFlag.buildSysFlag(false, true);
                 } else {
@@ -231,6 +242,8 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
                 }
             }
 
+            // todo 创建 Topic 在 Broker中缓存并上报 Topic
+            // 如果不支持自动创建 Topic，那么 topicConfig 返回值为 null
             log.warn("the topic {} not exist, producer: {}", requestHeader.getTopic(), ctx.channel().remoteAddress());
             topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageMethod(
                 requestHeader.getTopic(),
@@ -238,15 +251,20 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
                 RemotingHelper.parseChannelRemoteAddr(ctx.channel()),
                 requestHeader.getDefaultTopicQueueNums(), topicSysFlag);
 
+            // todo 创建重试主题
             if (null == topicConfig) {
+                // todo 创建重试主题，可以处理消费消息失败时，消费者通过持有的生产者重新投递消息的场景
                 if (requestHeader.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
                     topicConfig =
-                        this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(
-                            requestHeader.getTopic(), 1, PermName.PERM_WRITE | PermName.PERM_READ,
-                            topicSysFlag);
+                            this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(
+                                    requestHeader.getTopic(), // 重试主题
+                                    1, // 队列数
+                                    PermName.PERM_WRITE | PermName.PERM_READ, // 权限
+                                    topicSysFlag);
                 }
             }
 
+            // todo 如果创建、上报 Topic 失败，则校验失败
             if (null == topicConfig) {
                 response.setCode(ResponseCode.TOPIC_NOT_EXIST);
                 response.setRemark("topic[" + requestHeader.getTopic() + "] not exist, apply first please!"
@@ -255,8 +273,11 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
             }
         }
 
+        // todo 4. 检查队列
         int queueIdInt = requestHeader.getQueueId();
         int idValid = Math.max(topicConfig.getWriteQueueNums(), topicConfig.getReadQueueNums());
+
+        // 发送消息的队列编号不能超过最大消息队列的编号
         if (queueIdInt >= idValid) {
             String errorInfo = String.format("request queueId[%d] is illegal, %s Producer: %s",
                 queueIdInt,
@@ -319,17 +340,26 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
         }
     }
 
+    /**
+     * 解析请求
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     protected SendMessageRequestHeader parseRequestHeader(RemotingCommand request)
         throws RemotingCommandException {
 
         SendMessageRequestHeaderV2 requestHeaderV2 = null;
         SendMessageRequestHeader requestHeader = null;
+        // 根据请求码进行解析请求
         switch (request.getCode()) {
+            // 批量发送请求
             case RequestCode.SEND_BATCH_MESSAGE:
             case RequestCode.SEND_MESSAGE_V2:
                 requestHeaderV2 =
                     (SendMessageRequestHeaderV2) request
                         .decodeCommandCustomHeader(SendMessageRequestHeaderV2.class);
+            // 消息发送
             case RequestCode.SEND_MESSAGE:
                 if (null == requestHeaderV2) {
                     requestHeader =
