@@ -150,6 +150,7 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
     public RemotingCommand processRequest(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         switch (request.getCode()) {
+            // 创建或更新主题
             case RequestCode.UPDATE_AND_CREATE_TOPIC:
                 return this.updateAndCreateTopic(ctx, request);
             case RequestCode.DELETE_TOPIC_IN_BROKER:
@@ -170,10 +171,16 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
                 return this.getEarliestMsgStoretime(ctx, request);
             case RequestCode.GET_BROKER_RUNTIME_INFO:
                 return this.getBrokerRuntimeInfo(ctx, request);
+
+            // 向 Broker 锁定指定的 MessageQueue(s)
             case RequestCode.LOCK_BATCH_MQ:
                 return this.lockBatchMQ(ctx, request);
+
+            // 向 Broker 释放指定的 MessageQueue(s)
             case RequestCode.UNLOCK_BATCH_MQ:
                 return this.unlockBatchMQ(ctx, request);
+
+            // 更新或创建订阅信息
             case RequestCode.UPDATE_AND_CREATE_SUBSCRIPTIONGROUP:
                 return this.updateAndCreateSubscriptionGroup(ctx, request);
             case RequestCode.GET_ALL_SUBSCRIPTIONGROUP_CONFIG:
@@ -241,11 +248,22 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
         return null;
     }
 
+    /**
+     * 不拒绝请求
+     * @return
+     */
     @Override
     public boolean rejectRequest() {
         return false;
     }
 
+    /**
+     * 更新或创建 Topic
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private synchronized RemotingCommand updateAndCreateTopic(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
@@ -262,21 +280,35 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
             return response;
         }
 
+        // 创建 Topic 配置
         TopicConfig topicConfig = new TopicConfig(topic);
+        // 设置 Topic 下读队列数
         topicConfig.setReadQueueNums(requestHeader.getReadQueueNums());
+        // 设置 Topic 下写队列数
         topicConfig.setWriteQueueNums(requestHeader.getWriteQueueNums());
+        // Topic 过滤
         topicConfig.setTopicFilterType(requestHeader.getTopicFilterTypeEnum());
+        // Topic 权限
         topicConfig.setPerm(requestHeader.getPerm());
         topicConfig.setTopicSysFlag(requestHeader.getTopicSysFlag() == null ? 0 : requestHeader.getTopicSysFlag());
 
+        // 缓存 Topic 配置在 Broker
         this.brokerController.getTopicConfigManager().updateTopicConfig(topicConfig);
 
+        // 上报 Broker 到 nameSrv
         this.brokerController.registerIncrementBrokerData(topicConfig, this.brokerController.getTopicConfigManager().getDataVersion());
 
         response.setCode(ResponseCode.SUCCESS);
         return response;
     }
 
+    /**
+     * 删除 Topic
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private synchronized RemotingCommand deleteTopic(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
@@ -286,14 +318,18 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
         log.info("deleteTopic called by {}", RemotingHelper.parseChannelRemoteAddr(ctx.channel()));
 
         String topic = requestHeader.getTopic();
+        // 特殊字符、Topic长度超过 127、Topic 为空，直接返回
         if (!TopicValidator.validateTopic(topic, response)) {
             return response;
         }
+        // 系统级的 Topic 不允许删除
         if (TopicValidator.isSystemTopic(topic, response)) {
             return response;
         }
 
+        // 删除 Topic
         this.brokerController.getTopicConfigManager().deleteTopicConfig(topic);
+        // 清理未被使用的 Topic
         this.brokerController.getMessageStore()
             .cleanUnusedTopic(this.brokerController.getTopicConfigManager().getTopicConfigTable().keySet());
         if (this.brokerController.getBrokerConfig().isAutoDeleteUnusedStats()) {
@@ -304,6 +340,13 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
         return response;
     }
 
+    /**
+     * 更新或创建访问配置
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private synchronized RemotingCommand updateAndCreateAccessConfig(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
@@ -627,11 +670,20 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
         return response;
     }
 
+    /**
+     *
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private RemotingCommand lockBatchMQ(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
+        // 解码请求
         LockBatchRequestBody requestBody = LockBatchRequestBody.decode(request.getBody(), LockBatchRequestBody.class);
 
+        // 锁定 MQSet
         Set<MessageQueue> lockOKMQSet = this.brokerController.getRebalanceLockManager().tryLockBatch(
             requestBody.getConsumerGroup(),
             requestBody.getMqSet(),
@@ -646,11 +698,21 @@ public class AdminBrokerProcessor extends AsyncNettyRequestProcessor implements 
         return response;
     }
 
+    /**
+     *
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private RemotingCommand unlockBatchMQ(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
+
+        // 解码请求
         UnlockBatchRequestBody requestBody = UnlockBatchRequestBody.decode(request.getBody(), UnlockBatchRequestBody.class);
 
+        // 解锁 MQSet
         this.brokerController.getRebalanceLockManager().unlockBatch(
             requestBody.getConsumerGroup(),
             requestBody.getMqSet(),
