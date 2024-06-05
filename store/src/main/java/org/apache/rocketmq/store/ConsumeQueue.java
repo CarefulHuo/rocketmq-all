@@ -44,6 +44,14 @@ public class ConsumeQueue {
     private volatile long minLogicOffset = 0;
     private ConsumeQueueExt consumeQueueExt = null;
 
+    /**
+     * 创建并初始化消费队列
+     * @param topic
+     * @param queueId
+     * @param storePath
+     * @param mappedFileSize
+     * @param defaultMessageStore
+     */
     public ConsumeQueue(
         final String topic,
         final int queueId,

@@ -1191,9 +1191,18 @@ public class DefaultMessageStore implements MessageStore {
         return messageIds;
     }
 
+    /**
+     * 检查 Topic 下 queueId 消费队列 的 ConsumerOffset 逻辑偏移量对应的消息是否在内存中
+     *  true--不在，false--在
+     * @param topic topic.
+     * @param queueId queue ID.
+     * @param consumeOffset consume queue offset.
+     * @return
+     */
     @Override
     public boolean checkInDiskByConsumeOffset(final String topic, final int queueId, long consumeOffset) {
 
+        // 消息的最大物理偏移量
         final long maxOffsetPy = this.commitLog.getMaxOffset();
 
         ConsumeQueue consumeQueue = findConsumeQueue(topic, queueId);
@@ -1203,6 +1212,7 @@ public class DefaultMessageStore implements MessageStore {
                 try {
                     for (int i = 0; i < bufferConsumeQueue.getSize(); ) {
                         i += ConsumeQueue.CQ_STORE_UNIT_SIZE;
+                        // 当前消息的物理偏移量
                         long offsetPy = bufferConsumeQueue.getByteBuffer().getLong();
                         return checkInDiskByCommitOffset(offsetPy, maxOffsetPy);
                     }
@@ -1255,8 +1265,17 @@ public class DefaultMessageStore implements MessageStore {
         return null;
     }
 
+    /**
+     * 根据 Topic 和 QueueId 获取 消费队列
+     * @param topic
+     * @param queueId
+     * @return
+     */
     public ConsumeQueue findConsumeQueue(String topic, int queueId) {
+        // 根据 Topic 获取所有的消费队列
         ConcurrentMap<Integer, ConsumeQueue> map = consumeQueueTable.get(topic);
+
+        // 如果没有，则创建一个 ConcurrentMap<Integer, ConsumeQueue> 并缓存起来
         if (null == map) {
             ConcurrentMap<Integer, ConsumeQueue> newMap = new ConcurrentHashMap<Integer, ConsumeQueue>(128);
             ConcurrentMap<Integer, ConsumeQueue> oldMap = consumeQueueTable.putIfAbsent(topic, newMap);
@@ -1267,8 +1286,12 @@ public class DefaultMessageStore implements MessageStore {
             }
         }
 
+        // 获取 queueId 对应的 消费队列
         ConsumeQueue logic = map.get(queueId);
+
+        // 如果没有，则创建一个 消费队列 并缓存起来
         if (null == logic) {
+            // 创建消费队列，注意一个逻辑：队列包含多个物理文件
             ConsumeQueue newLogic = new ConsumeQueue(
                 topic,
                 queueId,
@@ -1294,8 +1317,18 @@ public class DefaultMessageStore implements MessageStore {
         return nextOffset;
     }
 
+    /**
+     * 校验当前物理偏移量 offsetPy 对应的消息是否还在内存中
+     * 即 maxOffsetPy - offsetPy > memory 的话，说明 offsetPy 这个偏移量的消息已经从内存置换到磁盘中了
+     * @param offsetPy CommitLog 中消息对应的物理偏移量
+     * @param maxOffsetPy CommitLog 中最大的物理偏移量
+     * @return
+     */
     private boolean checkInDiskByCommitOffset(long offsetPy, long maxOffsetPy) {
+        // 驻内存的消息大小： 物理内存总大小 * 消息存储内存的比例
         long memory = (long) (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE * (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));
+
+        // 是否超过驻内存的大小
         return (maxOffsetPy - offsetPy) > memory;
     }
 

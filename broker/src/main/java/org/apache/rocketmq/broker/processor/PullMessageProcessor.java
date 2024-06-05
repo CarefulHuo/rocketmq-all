@@ -112,6 +112,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
         final PullMessageRequestHeader requestHeader =
             (PullMessageRequestHeader) request.decodeCommandCustomHeader(PullMessageRequestHeader.class);
 
+        // 请求头的 Opaque 赋值给响应头，便于请求与响应进行对应
         response.setOpaque(request.getOpaque());
 
         log.debug("receive PullMessage request command, {}", request);
@@ -134,7 +135,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
         // todo 如果还是为空，则不能拉取消息，直接报错，订阅组不存在
         // todo 如果不允许自动创建订阅组消息，必须手动向 Broker 创建订阅组信息，否则不能拉取消息
         // todo 即某个消费组下的消费者从 Broker 拉取消息，那么该 Broker 必须有消费组的信息，不然无法拉取消息。
-        //  FIXME: 集群扩容时，需要同步在集群上的 Topic.json subscriptionGroup.json 文件
+        //  FIXME: Broker 集群扩容时，需要同步在集群上的 Topic.json subscriptionGroup.json 文件
         if (null == subscriptionGroupConfig) {
             response.setCode(ResponseCode.SUBSCRIPTION_GROUP_NOT_EXIST);
             response.setRemark(String.format("subscription group [%s] does not exist, %s", requestHeader.getConsumerGroup(), FAQUrl.suggestTodo(FAQUrl.SUBSCRIPTION_GROUP_NOT_EXIST)));
@@ -174,7 +175,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             return response;
         }
 
-        // todo 校验读取队列在 Topic 配置-队列范围内
+        // todo 校验读队列的编号是否在 Topic 配置-队列范围内
         if (requestHeader.getQueueId() < 0 || requestHeader.getQueueId() >= topicConfig.getReadQueueNums()) {
             String errorInfo = String.format("queueId[%d] is illegal, topic:[%s] topicConfig.readQueueNums:[%d] consumer:[%s]",
                 requestHeader.getQueueId(), requestHeader.getTopic(), topicConfig.getReadQueueNums(), channel.remoteAddress());
@@ -240,7 +241,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                 return response;
             }
 
-            // 校验 消费分组信息，消息模型是否匹配
+            // 校验 subscriptionGroupConfig、consumerGroupInfo 中设置的消费模式是否不一致
             if (!subscriptionGroupConfig.isConsumeBroadcastEnable()
                 && consumerGroupInfo.getMessageModel() == MessageModel.BROADCASTING) {
                 response.setCode(ResponseCode.NO_PERMISSION);
@@ -285,7 +286,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             }
         }
 
-        // 如果 非 tag 模式，需要打开 enablePropertyFilter 开关，启用属性过滤
+        // 如果 非 tag 模式，SQL92 和 类过滤模式 需要打开 enablePropertyFilter 开关，启用属性过滤
         if (!ExpressionType.isTagType(subscriptionData.getExpressionType())
             && !this.brokerController.getBrokerConfig().isEnablePropertyFilter()) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
@@ -612,12 +613,13 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             response.setCode(ResponseCode.SYSTEM_ERROR);
             response.setRemark("store getMessage return null");
         }
-        // todo 如果消费端提交消费进度，并且当前Broker为主节点，则更新消息消费进度
+        // todo 1. Broker 挂起消息请求
         boolean storeOffsetEnable = brokerAllowSuspend;
+        // todo 2. 允许消费端提交消费进度
         storeOffsetEnable = storeOffsetEnable && hasCommitOffsetFlag;
-        storeOffsetEnable = storeOffsetEnable
-            && this.brokerController.getMessageStoreConfig().getBrokerRole() != BrokerRole.SLAVE;
-        // todo 消费端提交消费进度过来了
+        // todo 3. 当前 Broker为主节点
+        storeOffsetEnable = storeOffsetEnable && this.brokerController.getMessageStoreConfig().getBrokerRole() != BrokerRole.SLAVE;
+        // todo 符合 1 2 3 三点，Broker 才会提交消费进度
         if (storeOffsetEnable) {
             // 提交消费进度
             this.brokerController.getConsumerOffsetManager().commitOffset(RemotingHelper.parseChannelRemoteAddr(channel),
