@@ -580,15 +580,32 @@ public class HAService {
             }
         }
 
+        /**
+         * 是否向主服务器反馈已拉取消息偏移量
+         * todo 依据，如果超过 5s 的间隔时间没有请求拉取则反馈
+         * @return
+         */
         private boolean isTimeToReportOffset() {
+            // 距离上次写入消息的时间戳
             long interval =
                 HAService.this.defaultMessageStore.getSystemClock().now() - this.lastWriteTimestamp;
+
+            // 主服务器与从服务器的高可用心跳发送时间间隔默认为 5s
             boolean needHeart = interval > HAService.this.defaultMessageStore.getMessageStoreConfig()
                 .getHaSendHeartbeatInterval();
 
             return needHeart;
         }
 
+        /**
+         * 向主服务器反馈当前拉取偏移量，这里有两重含义
+         * 1. 对于从服务器来说，是向主服务器发送下次待拉取消息的偏移量
+         * 2. 对于主服务器来说，既可以认为是从服务器本次请求拉取的消息偏移量，也可以理解为从服务器的消息同步 ACK 确认消息
+         * todo 结果，向主服务器发送一个 8 字节的请求，请求包中包含的数据为从服务器消息文件的最大偏移量。
+         *
+         * @param maxOffset 从服务器当前的复制进度，一般都是消息的最大偏移量
+         * @return
+         */
         private boolean reportSlaveMaxOffset(final long maxOffset) {
             this.reportOffset.position(0);
             this.reportOffset.limit(8);
