@@ -23,14 +23,26 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 等待-通知对象
+ */
 public class WaitNotifyObject {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    /**
+     * 线程Id到唤醒标志的映射
+     */
     protected final HashMap<Long/* thread id */, Boolean/* notified */> waitingThreadTable =
         new HashMap<Long, Boolean>(16);
 
+    /**
+     * 标记是否已通知
+     */
     protected volatile boolean hasNotified = false;
 
+    /**
+     * 通知-唤醒
+     */
     public void wakeup() {
         synchronized (this) {
             if (!this.hasNotified) {
@@ -40,6 +52,10 @@ public class WaitNotifyObject {
         }
     }
 
+    /**
+     * 超时等待
+     * @param interval
+     */
     protected void waitForRunning(long interval) {
         synchronized (this) {
             if (this.hasNotified) {
@@ -62,12 +78,18 @@ public class WaitNotifyObject {
     protected void onWaitEnd() {
     }
 
+    /**
+     * 唤醒所有
+     */
     public void wakeupAll() {
         synchronized (this) {
             boolean needNotify = false;
 
             for (Map.Entry<Long,Boolean> entry : this.waitingThreadTable.entrySet()) {
+                // 如果存在等待唤醒的线程，那么就设置唤醒标记
                 needNotify = needNotify || !entry.getValue();
+
+                // 设置标记为 true
                 entry.setValue(true);
             }
 
@@ -77,11 +99,17 @@ public class WaitNotifyObject {
         }
     }
 
+    /**
+     * 超时等待所有
+     * @param interval
+     */
     public void allWaitForRunning(long interval) {
         long currentThreadId = Thread.currentThread().getId();
         synchronized (this) {
+            // 获取当前线程等待状态，如果当前线程已经唤醒，将当前线程的通知标识设置为 false，然后直接返回
             Boolean notified = this.waitingThreadTable.get(currentThreadId);
             if (notified != null && notified) {
+                // 设置标记为 false
                 this.waitingThreadTable.put(currentThreadId, false);
                 this.onWaitEnd();
                 return;

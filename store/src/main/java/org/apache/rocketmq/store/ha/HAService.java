@@ -509,7 +509,7 @@ public class HAService {
     }
 
     /**
-     * HA 客户端实现 - 读取主服务器发回的消息 & 请求拉取消息 或 ACK 消息
+     * HA客户端实现 - 读取主服务器发回的消息 & 请求拉取消息 或 ACK 消息
      * todo 从服务器端的核心实现类，即专门用于从服务器
      */
     class HAClient extends ServiceThread {
@@ -582,7 +582,7 @@ public class HAService {
 
         /**
          * 是否向主服务器反馈已拉取消息偏移量
-         * todo 依据，如果超过 5s 的间隔时间没有请求拉取则反馈
+         * todo 依据，如果超过 5s 的时间间隔没有请求拉取则反馈
          * @return
          */
         private boolean isTimeToReportOffset() {
@@ -607,14 +607,21 @@ public class HAService {
          * @return
          */
         private boolean reportSlaveMaxOffset(final long maxOffset) {
-            this.reportOffset.position(0);
-            this.reportOffset.limit(8);
-            this.reportOffset.putLong(maxOffset);
+            // 设置指针和大小
             this.reportOffset.position(0);
             this.reportOffset.limit(8);
 
+            // 将偏移量写入到 Bytebuffer 中
+            this.reportOffset.putLong(maxOffset);
+
+            // 将 ByteBuffer 从写模式切换到读模式，以便将数据传入通道
+            this.reportOffset.position(0);
+            this.reportOffset.limit(8);
+
+            // 将一个 ByteBuffer 写入到通道，通常使用循环写入
             for (int i = 0; i < 3 && this.reportOffset.hasRemaining(); i++) {
                 try {
+                    // todo 发送到主服务器
                     this.socketChannel.write(this.reportOffset);
                 } catch (IOException e) {
                     log.error(this.getServiceName()
@@ -623,13 +630,24 @@ public class HAService {
                 }
             }
 
+            // 更新上次写入消息的时间，用于后续判断是否需要向主服务器上报
             lastWriteTimestamp = HAService.this.defaultMessageStore.getSystemClock().now();
             return !this.reportOffset.hasRemaining();
         }
 
+        /**
+         * 处理 ByteBufferRead 中未包含一条完整的消息的处理逻辑
+         * todo 核心逻辑：将 ReadByteBuffer 中剩余的有效数据先复制到 ReadByteBufferBak，然后交换 ReadByteBuffer 与 ReadByteBufferBak，以便更多的数据到达再处理
+         */
         private void reallocateByteBuffer() {
+
+            // 是否还存在未处理的数据
             int remain = READ_MAX_BUFFER_SIZE - this.dispatchPosition;
+
+            // 存在未处理的数据
             if (remain > 0) {
+
+                // 将未处理的数据写入到 byteBufferBackup
                 this.byteBufferRead.position(this.dispatchPosition);
 
                 this.byteBufferBackup.position(0);
@@ -637,61 +655,116 @@ public class HAService {
                 this.byteBufferBackup.put(this.byteBufferRead);
             }
 
+            // 将 byteBufferBackup 的内容交换到 byteBufferRead
             this.swapByteBuffer();
 
+            // 重新设置 byteBufferRead 的位置和大小
             this.byteBufferRead.position(remain);
             this.byteBufferRead.limit(READ_MAX_BUFFER_SIZE);
             this.dispatchPosition = 0;
         }
 
+        /**
+         * 将 byteBufferRead 与 byteBufferBackup 进行交换
+         */
         private void swapByteBuffer() {
             ByteBuffer tmp = this.byteBufferRead;
             this.byteBufferRead = this.byteBufferBackup;
             this.byteBufferBackup = tmp;
         }
 
+        /**
+         * 处理网络读请求
+         * todo 说明：处理从主服务器传回的消息数据
+         * @return
+         */
         private boolean processReadEvent() {
             int readSizeZeroTimes = 0;
+
+            // 循环判断 ByteBufferRead 读缓存区是否还有剩余空间可供数据存储
+            // 当 position == limit 时，可以认为 读缓存区此时已经没有待处理数据
             while (this.byteBufferRead.hasRemaining()) {
                 try {
+                    // 如果存在剩余空间，则调用 SocketChannel.read 方法将通道中的数据读入读缓存区 BytebufferRead
                     int readSize = this.socketChannel.read(this.byteBufferRead);
+
+                    // 如果读取到的字节数 > 0
                     if (readSize > 0) {
+                        // 重置读取到0字节的次数
                         readSizeZeroTimes = 0;
+                        // todo 将读取到的所有消息追加到消息内存映射文件中，然后反馈拉取进度给主服务器
                         boolean result = this.dispatchReadRequest();
                         if (!result) {
                             log.error("HAClient, dispatchReadRequest error");
                             return false;
                         }
+
+                        // 如果读取到的字节数 == 0 && 读取到 0 字节的次数 >= 3，则跳出循环
                     } else if (readSize == 0) {
                         if (++readSizeZeroTimes >= 3) {
                             break;
                         }
+
+                        // 如果读取到的字节数 < 0 , 返回 false
                     } else {
                         log.info("HAClient, processReadEvent read socket < 0");
                         return false;
                     }
+
+                    // 发生 IO 异常，则返回 false
                 } catch (IOException e) {
                     log.info("HAClient, processReadEvent read socket exception", e);
                     return false;
                 }
             }
 
+            // 没有待处理的主服务器发回的消息，则直接返回
             return true;
         }
 
+        /**
+         * todo 将主服务器传回的消息追加到 CommitLog 中，并转发到消息消费队列与索引文件中
+         * 1. 将主服务器传回的消息追加到内存映射文件中。
+         * todo 即该方法主要从 ByteBufferRead 读缓冲区中解析一条一条的消息，然后存储到 CommitLog 文件，并转发到消息消费队列和索引文件中
+         * 2. 如何判断 ByteBufferRead 是否包含一条完整的消息
+         * @return
+         */
         private boolean dispatchReadRequest() {
+            // 1. 定义消息头大小，大小为 12 个字节，包括消息的物理偏移量与消息的长度
+            // todo 注意：长度字节必须首先探测，否则无法判断 ByteBufferRead 缓存区中是否包含一条完整的消息
+            // 8 字节物理偏移量的作用：告诉从服务器，该消息属于哪个文件
+            // 4 字节物理偏移量的作用：表示消息体的大小
             final int msgHeaderSize = 8 + 4; // phyoffset + size
+
+            // 2. 记录当前 ByteBufferRead 读缓存区的位置(指针)
             int readSocketPos = this.byteBufferRead.position();
 
             while (true) {
+
+                // 3. 先探测 ByteBufferRead 缓冲区中是否包含一条消息的头部，如果包含头部，则读取物理偏移量和消息长度，然后再探测是否包含一条完整的消息，
+                // 如果不包含，则需要将 ByteBufferRead 中的数据备份，以便更多的数据到达再处理
+
+                // 3.1 获取 ByteBufferRead 未处理的缓存区大小
                 int diff = this.byteBufferRead.position() - this.dispatchPosition;
+
+                // 3.2 读缓存区是否包含一条消息头部，不包含肯定不是一条完整的消息；即使包含了，也要进一步进行判断
                 if (diff >= msgHeaderSize) {
+
+                    /******************************3.2.1 读取主服务器返回消息的头 ************************/
+
+                    // 读取 8 字节的消息物理偏移量
                     long masterPhyOffset = this.byteBufferRead.getLong(this.dispatchPosition);
+                    // 读取 4 字节的消息的长度
+                    // todo 如果是主节点发送的心跳消息，为 0 ，从节点也就不会处理该消息了
                     int bodySize = this.byteBufferRead.getInt(this.dispatchPosition + 8);
 
+                    // 获取从服务器当前消息文件(CommitLog)的最大物理偏移量，其实就是写指针的位置，下次就从这里写
                     long slavePhyOffset = HAService.this.defaultMessageStore.getMaxPhyOffset();
 
+                    // 如果 slave 的最大物理偏移量与 Master 给的最大物理偏移量不相等，则返回 false
+                    // todo 注意：从后面的处理逻辑来看，返回 false ，将会关闭与 Master 的连接，在 slave 本次周期内，将不会再参与主从同步了
                     if (slavePhyOffset != 0) {
+                        // todo 要和发送过来的偏移量对应，以保持连接
                         if (slavePhyOffset != masterPhyOffset) {
                             log.error("master pushed offset not equal the max phy offset in slave, SLAVE: "
                                 + slavePhyOffset + " MASTER: " + masterPhyOffset);
@@ -699,24 +772,45 @@ public class HAService {
                         }
                     }
 
+                    // 探测是否包含一条完整的消息，包含的话，就可以将消息内容追加到消息内存映射文件中
+                    // todo 主服务器发送信息分为两部分：消息头 + 消息体
                     if (diff >= (msgHeaderSize + bodySize)) {
+
+                        /*************************3.2.2 读取主服务器返回消息的体 ************************/
+
+                        // 创建消息体大小的字节数组
                         byte[] bodyData = new byte[bodySize];
+
+                        // 设置 ByteBufferRead 的 position 指针为 this.dispatchPosition + msgHeaderSize
+                        // todo 表示 ByteBufferRead 已转发的进度
                         this.byteBufferRead.position(this.dispatchPosition + msgHeaderSize);
+
+                        // 读取消息体长度的字节内容到 BodyData 中
                         this.byteBufferRead.get(bodyData);
 
+                        /************************3.2.3 将读取到的完整消息进行存储 *************************/
+                        //todo 将消息内容追加到消息内存映射文件(mapperFile)中进行消息重放
                         HAService.this.defaultMessageStore.appendToCommitLog(masterPhyOffset, bodyData);
 
+                        // 重置 this.byteBufferRead 的 position 指针为 readSocketPos，
+                        // 便于判断 是否还有更多消息
                         this.byteBufferRead.position(readSocketPos);
+
+                        // 更新 dispatchPosition，即已处理读缓存区的指针
                         this.dispatchPosition += msgHeaderSize + bodySize;
 
+                        /************************3.2.4 向主服务器 ACK 消息******************************/
+                        // todo 向主服务器及时反馈当前已存储进度，也就是继续请求-复制消息请求
                         if (!reportSlaveMaxOffsetPlus()) {
                             return false;
                         }
 
+                        //继续尝试读取下一条消息
                         continue;
                     }
                 }
 
+                // todo 如果 ByteBufferRead 包含一条不完整的消息，则需要将 BytebufferRead 的数据备份到 BytebufferReadBackup 中，以便更多的数据到达再处理
                 if (!this.byteBufferRead.hasRemaining()) {
                     this.reallocateByteBuffer();
                 }
@@ -727,13 +821,23 @@ public class HAService {
             return true;
         }
 
+        /**
+         * 尝试向主服务器反馈从服务器当前已存储进度--plus版
+         * @return
+         */
         private boolean reportSlaveMaxOffsetPlus() {
             boolean result = true;
+            // 获取从服务器 CommitLog 最大偏移量
             long currentPhyOffset = HAService.this.defaultMessageStore.getMaxPhyOffset();
+
+            // 如果大于内存中记录从服务器当前的复制进度 currentReportedOffset，则更新 currentReportedOffset
             if (currentPhyOffset > this.currentReportedOffset) {
                 this.currentReportedOffset = currentPhyOffset;
+
+                // 向主服务器反馈 从服务器当前的复制进度 currentReportedOffset
                 result = this.reportSlaveMaxOffset(this.currentReportedOffset);
                 if (!result) {
+                    // 反馈失败，关闭连接
                     this.closeMaster();
                     log.error("HAClient, reportSlaveMaxOffset error, " + this.currentReportedOffset);
                 }
@@ -742,37 +846,60 @@ public class HAService {
             return result;
         }
 
+        /**
+         * 连接主服务器
+         * 说明：
+         * 在 Broker 启动时，
+         * 如果 Broker 角色为从服务器，则读取 Broker 配置文件中的 HaMasterAddress 属性并更新 HAClient 的 MasterAddress
+         * 如果 Broker 角色为从服务器，但 HaMasterAddress 属性为空，启动 Broker 不会报错，但是不会执行主从同步复制
+         *
+         * @return 是否成功连接上 Master true-是 false-否
+         * @throws ClosedChannelException
+         */
         private boolean connectMaster() throws ClosedChannelException {
+            // 1. 如果 SocketChannel 为 null ，则尝试连接主服务器
             if (null == socketChannel) {
                 String addr = this.masterAddress.get();
-                if (addr != null) {
 
+                // 如果主服务器地址不为空，则建立到主服务器的 TCP 连接
+                if (addr != null) {
                     SocketAddress socketAddress = RemotingUtil.string2SocketAddress(addr);
                     if (socketAddress != null) {
+                        // 连接通道
                         this.socketChannel = RemotingUtil.connect(socketAddress);
+
+                        // todo 注册 op_read (网络读事件)，用于接收主服务器发来的消息
                         if (this.socketChannel != null) {
                             this.socketChannel.register(this.selector, SelectionKey.OP_READ);
                         }
                     }
                 }
 
+                // todo 初始化从服务器当前的复制进度，即 CommitLog 的最大偏移量
                 this.currentReportedOffset = HAService.this.defaultMessageStore.getMaxPhyOffset();
 
+                // todo 上一次写入消息的时间初始化为当前时间
                 this.lastWriteTimestamp = System.currentTimeMillis();
             }
 
+            // todo socketChannel 不为空，说明连接上了 Master 主服务器
             return this.socketChannel != null;
         }
 
+        /**
+         * 关闭与 Master 的连接
+         */
         private void closeMaster() {
             if (null != this.socketChannel) {
                 try {
 
+                    // 取消事件
                     SelectionKey sk = this.socketChannel.keyFor(this.selector);
                     if (sk != null) {
                         sk.cancel();
                     }
 
+                    // 关闭通道
                     this.socketChannel.close();
 
                     this.socketChannel = null;
@@ -780,6 +907,7 @@ public class HAService {
                     log.warn("closeMaster exception. ", e);
                 }
 
+                // 重置上次写入消息的时间戳、当前已处理读缓存区的指针、ByteBufferBackup、ByteBufferRead
                 this.lastWriteTimestamp = 0;
                 this.dispatchPosition = 0;
 
@@ -791,32 +919,51 @@ public class HAService {
             }
         }
 
+        /**
+         * 该方法是整个HAClient 的核心方法，该方法会一直循环，直到 HAClient 的 isStopped() 方法返回 true，才会退出循环
+         * todo 该方法是 HACline 整个工作机制的实现
+         */
         @Override
         public void run() {
             log.info(this.getServiceName() + " service started");
 
             while (!this.isStopped()) {
                 try {
+                    // 1. 从服务器连接主服务器，处于连接状态时，不需要重连主服务器
+                    // todo 连接主服务器，如果是 Broker 配置文件中 没有配置 haMasterAddress 属性的从服务器，则忽略
                     if (this.connectMaster()) {
 
+                        // 2. 判断是否需要向主服务器反馈当前已经拉取消息的物理偏移量，依据：每次上报间隔必须大于 haSendHeartbeatInterval 默认 5s
                         if (this.isTimeToReportOffset()) {
+                            // 3. 需要向主服务器反馈已拉取消息物理偏移量，则向主服务器发送一个 8 字节的请求，请求中包含的数据为 当前 Broker (从服务器) 消息的最大物理偏移量，首次是 0
+                            // todo 其实反馈也是向主服务器发送消息复制请求，请求偏移量每次都是从服务器的消息文件的最大物理偏移量
+                            // todo 发送消息复制请求
                             boolean result = this.reportSlaveMaxOffset(this.currentReportedOffset);
+
+                            // 发送失败，关闭连接，下次重新建立
                             if (!result) {
                                 this.closeMaster();
                             }
                         }
 
+                        // 4. 进行事件选择，执行间隔时间为 1s
                         this.selector.select(1000);
 
+                        // 5. todo 处理网络读请求，即处理主服务器发送过来的消息
                         boolean ok = this.processReadEvent();
+                        // 处理失败，即将消息追加到 CommitLog 文件失败，则关闭与主服务器的连接，并清理缓存，重置变量值
                         if (!ok) {
                             this.closeMaster();
                         }
 
+                        // 6. 尝试向主服务器反馈，从服务器当前已存储的CommitLog的最大物理偏移量，
+                        // 大于 this.currentReportedOffset 时，会更新 this.currentReportedOffset 的值，并反馈
                         if (!reportSlaveMaxOffsetPlus()) {
+                            // 反馈失败，结束此次循环，连接也会关闭，下次循环时，会重新连接主服务器
                             continue;
                         }
 
+                        // 连接过期，则断开连接
                         long interval =
                             HAService.this.getDefaultMessageStore().getSystemClock().now()
                                 - this.lastWriteTimestamp;
@@ -828,6 +975,7 @@ public class HAService {
                             log.warn("HAClient, master not response some time, so close connection");
                         }
                     } else {
+                        // 如果连接主服务器失败，则等待 5s，再次尝试连接
                         this.waitForRunning(1000 * 5);
                     }
                 } catch (Exception e) {
