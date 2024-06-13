@@ -20,6 +20,19 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * 用于存储索引头相关信息。它使用ByteBuffer来存储数据，并提供了加载和更新ByteBuffer的方法。
+ * 类中包含了一些原子类型变量，如beginTimestamp、endTimestamp、beginPhyOffset、endPhyOffset、hashSlotCount和indexCount，用于线程安全地访问和修改这些值。
+ * 此外，还提供了获取和设置这些变量值的方法。
+ * 1. IndexHeader类的静态变量beginTimestampIndex、endTimestampIndex、beginPhyoffsetIndex、endPhyoffsetIndex、hashSlotcountIndex和indexCountIndex定义了ByteBuffer中各个字段的起始索引。
+ * 2. byteBuffer是一个ByteBuffer对象，用于存储IndexHeader的相关信息。
+ * 3. beginTimestamp、endTimestamp、beginPhyOffset、endPhyOffset、hashSlotCount和indexCount是原子类型变量，分别表示开始时间戳、结束时间戳、开始物理偏移量、结束物理偏移量、哈希槽数量和索引数量。
+ * 4. load方法从byteBuffer中加载信息到变量中。
+ * 5. updateByteBuffer方法将变量的值更新到byteBuffer中。
+ * 6. getBeginTimestamp、setBeginTimestamp、getEndTimestamp、setEndTimestamp、getBeginPhyOffset、setBeginPhyOffset、getEndPhyOffset、setEndPhyOffset、getHashSlotCount和setHashSlotCount方法分别用于获取和设置各个变量的值。
+ * 7. incHashSlotCount方法用于增加hashSlotCount的值，并更新byteBuffer。
+ * 8. incIndexCount方法用于增加indexCount的值，并更新byteBuffer。
+ */
 public class IndexHeader {
     public static final int INDEX_HEADER_SIZE = 40;
     private static int beginTimestampIndex = 0;

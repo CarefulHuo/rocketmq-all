@@ -33,6 +33,9 @@ import org.apache.rocketmq.store.DefaultMessageStore;
 import org.apache.rocketmq.store.DispatchRequest;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+/**
+ * 索引服务
+ */
 public class IndexService {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     /**
@@ -198,17 +201,25 @@ public class IndexService {
         return topic + "#" + key;
     }
 
+    /**
+     * 构建索引文件
+     * @param req
+     */
     public void buildIndex(DispatchRequest req) {
+        // 获取或者创建索引文件
         IndexFile indexFile = retryGetAndCreateIndexFile();
         if (indexFile != null) {
             long endPhyOffset = indexFile.getEndPhyOffset();
             DispatchRequest msg = req;
             String topic = msg.getTopic();
             String keys = msg.getKeys();
+
+            // 如果 IndexFile 中的最大物理偏移量大于该消息的 CommitLog 物理偏移量，则说明该消息不需要再构建索引
             if (msg.getCommitLogOffset() < endPhyOffset) {
                 return;
             }
 
+            // 根据消息的系统标志位，判断消息的事务类型，如果是事务回滚类型，则直接返回
             final int tranType = MessageSysFlag.getTransactionValue(msg.getSysFlag());
             switch (tranType) {
                 case MessageSysFlag.TRANSACTION_NOT_TYPE:
@@ -219,6 +230,8 @@ public class IndexService {
                     return;
             }
 
+            // 如果存在唯一键或消息的键值，将他们与消息关联，并更新索引文件
+            // 如果无法获取或创建索引文件，则记录错误日志并停止构建索引
             if (req.getUniqKey() != null) {
                 indexFile = putKey(indexFile, msg, buildKey(topic, req.getUniqKey()));
                 if (indexFile == null) {
@@ -227,6 +240,8 @@ public class IndexService {
                 }
             }
 
+            // 如果存在键值，则遍历键值，将消息与键值关联，并更新索引文件
+            // 如果无法获取或创建索引文件，则记录错误日志并停止构建索引
             if (keys != null && keys.length() > 0) {
                 String[] keyset = keys.split(MessageConst.KEY_SEPARATOR);
                 for (int i = 0; i < keyset.length; i++) {
