@@ -502,7 +502,7 @@ public class ScheduleMessageService extends ConfigManager {
                                     }
                                 }
 
-
+                                //todo 没有到达预期消费时间的消息，就不需要继续执行了，因为同一个队列的到期时间都是有序的，前一个没有到期，后面的就更没有，留着下次再次从这个偏移量开启遍历与判断是否到达
                             } else {
                                 // 2.7 如果延迟消息不存在，直接开始扫描下一个消息，
                                 ScheduleMessageService.this.timer.schedule(
@@ -553,6 +553,7 @@ public class ScheduleMessageService extends ConfigManager {
             msgInner.setFlag(msgExt.getFlag());
             MessageAccessor.setProperties(msgInner, msgExt.getProperties());
 
+            // 延迟消息的消息标签内容--由预期投递时间转换为消息便签的HashCode值，便于消息过滤
             TopicFilterType topicFilterType = MessageExt.parseTopicFilterType(msgInner.getSysFlag());
             long tagsCodeValue =
                 MessageExtBrokerInner.tagsString2tagsCode(topicFilterType, msgInner.getTags());
