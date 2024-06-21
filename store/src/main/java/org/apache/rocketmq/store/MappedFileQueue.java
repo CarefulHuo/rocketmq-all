@@ -333,6 +333,15 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 根据时间执行文件销毁和删除
+     *
+     * @param expiredTime         过期时间戳
+     * @param deleteFilesInterval 删除文件间的时间间隔
+     * @param intervalForcibly    强制删除时间间隔(第一次拒绝删除之后能保留文件的最大时间)
+     * @param cleanImmediately    是否立即删除
+     * @return
+     */
     public int deleteExpiredFileByTime(final long expiredTime,
         final int deleteFilesInterval,
         final long intervalForcibly,
