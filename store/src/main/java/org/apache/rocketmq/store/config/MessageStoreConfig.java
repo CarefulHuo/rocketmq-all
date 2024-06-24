@@ -97,7 +97,7 @@ public class MessageStoreConfig {
 
     // Whether schedule flush,default is real-time
     /**
-     * 默认 false 表示使用 await 等待，true 表示通过 Thread.sleep() 方法等待
+     * 默认 false 表示使用 await 等待(需要被唤醒)，true 表示通过 Thread.sleep() 方法等待 (固定周期)
      */
     @ImportantField
     private boolean flushCommitLogTimed = false;
@@ -187,6 +187,7 @@ public class MessageStoreConfig {
      * 每次 Flush ConsumeQueue 时，至少需要的 Page 页，默认为 2
      */
     private int flushConsumeQueueLeastPages = 2;
+
     private int flushCommitLogThoroughInterval = 1000 * 10;
     /**
      * 两次真实提交的时间间隔
