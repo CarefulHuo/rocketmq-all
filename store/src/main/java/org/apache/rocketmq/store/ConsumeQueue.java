@@ -25,6 +25,26 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+/**
+ * 必要性说明：
+ * 1. RocketMQ 是通过订阅 Topic 消费消息，但是 CommitLog 是存储消息是不区分 Topic 的。
+ * 2. 消费者通过遍历 CommitLog 去消费消息，那么效率就很低下了，所以，设计了 ConsumerQueue 作为 CommitLog 对应的索引文件
+ * <p>
+ * 前置说明:
+ * 1. ConsumerQueue ：MappedFileQueue : MappedFile = 1 : 1 : N
+ * 2. MappedFile ：00000000000000000000等文件
+ * 3. MappedFileQueue：
+ *  - 对 MappedFile 进行封装成文件队列，对上层提供可无限使用的文件容量
+ *  - 每个 MappedFile 文件大小是统一的
+ *  - 文件命名方式:  fileName[n] = fileName[n - 1] + mappedFileSize
+ *  4. ConsumerQueue 存储在 MappedFile 的内容大小必须是 20B (ConsumerQueue.CQ_STORE_UNIT_SIZE)
+ *  <p>
+ *  <p>
+ *  消息消费队列，引入的目的主要是为了提高消息消费效率，由于 RocketMQ 是基于主题 Topic 的订阅模式，消息消费时针对主题进行的，所以，要遍历 CommitLog 文件，根据 Topic 检索消息时非常低效的
+ *  特别说明：
+ *  1. 运行过程中，消息发送到 CommitLog 文件后，会同步将消息转发到消息队列(ConsumerQueue)
+ *  2. broker 启动时，检测 CommitLog 文件与 ConsumerQueue 、index 文件中消息是否一致，如果不一致，需要根据 CommitLog 文件重新恢复 ConsumerQueue 和 index 文件
+ */
 public class ConsumeQueue {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 

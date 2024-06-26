@@ -19,9 +19,17 @@ package org.apache.rocketmq.store;
 import java.util.concurrent.atomic.AtomicLong;
 
 public abstract class ReferenceResource {
+
+    /**
+     * MappedFile 的引用次数
+     */
     protected final AtomicLong refCount = new AtomicLong(1);
     protected volatile boolean available = true;
     protected volatile boolean cleanupOver = false;
+
+    /**
+     * MappedFile 第一次关闭时设置的时间戳
+     */
     private volatile long firstShutdownTimestamp = 0;
 
     public synchronized boolean hold() {
@@ -40,12 +48,25 @@ public abstract class ReferenceResource {
         return this.available;
     }
 
+    /**
+     * 关闭
+     * @param intervalForcibly 拒绝被销毁的最大存活时间
+     */
     public void shutdown(final long intervalForcibly) {
+        // 如果可用，则设置为非可用
         if (this.available) {
             this.available = false;
+            // 设置关闭时间戳
             this.firstShutdownTimestamp = System.currentTimeMillis();
+
+            // 释放资源
+            // 只有在 MappedFile 的引用次数小于 1 的情况下，才会释放资源
             this.release();
+
+            // 如果当前该文件被其他线程引用，则本次不强制删除
         } else if (this.getRefCount() > 0) {
+
+            // 在拒绝被删除保护期外，每执行一次清理任务，将引用次数减去 1000 引用次数小于 1 之后，该文件最终将删除
             if ((System.currentTimeMillis() - this.firstShutdownTimestamp) >= intervalForcibly) {
                 this.refCount.set(-1000 - this.getRefCount());
                 this.release();
