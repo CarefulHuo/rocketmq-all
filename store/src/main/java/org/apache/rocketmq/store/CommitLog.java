@@ -48,7 +48,7 @@ import org.apache.rocketmq.store.schedule.ScheduleMessageService;
 
 /**
  * Store all metadata downtime for recovery, data protection reliability
- * 消息主体以及元数据的存储主体，存储 Producer 端写入的消息主体内容，消息内容不是定长的。
+ * 消息主体以及元数据的存储主体，存储 Producer端写入的消息主体内容，消息内容不是定长的。
  * <p>
  *  前置说明：
  *  1. CommitLog : MappedFileQueue : MappedFile = 1 : 1 : N
@@ -178,7 +178,7 @@ public class CommitLog {
     }
 
     /**
-     * todo 开启刷盘线程
+     * todo 开启刷盘线程、消息提交任务线程
      */
     public void start() {
         // 开启同步或异步刷盘任务线程
@@ -256,7 +256,7 @@ public class CommitLog {
         // 根据给定的 偏移量获取该偏移量所在的物理 MappedFile
         MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset, returnFirstOnNotFound);
 
-        // todo 读取偏移量相关数据，怎么读取的？
+        // todo 读取偏移量相关数据
         if (mappedFile != null) {
             // 计算 Offset 在 MappedFile 中的偏移量
             int pos = (int) (offset % mappedFileSize);

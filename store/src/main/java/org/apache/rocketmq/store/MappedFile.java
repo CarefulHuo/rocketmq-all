@@ -47,6 +47,7 @@ import sun.nio.ch.DirectBuffer;
  * 1. 存储文件名格式：00000000000000000000、00000000001073741824、00000000002147483648等文件
  * 2. 每个 MappedFile 大小统一
  * 3. 文件命名格式：fileName[n] = fileName[n-1] + MappedFileSize
+ * 注意：PageCache 是操作系统分配的物理内存
  * todo 特别说明：通常有以下两种方式进行读写
  * 1. mmap + PageCache 的方式，读写消息都是走的 PageCache，这样子读写都在 PageCache 中进行，不可避免的会有锁的问题，在并发的读写操作情况下，会出现缺页中断降低，内存加锁，污染页的回写。
  * 2. DirectByteBuffer(堆外内存) + PageCache 的两层架构方式，这样可以实现读写消息分离，写入消息的时候，写到的是 DirectByteBuffer--堆外内存中，读消息走的是 PageCache（对于 DirectByteBuffer 是两步刷盘，一步是刷到 PageCache，还有一步是刷到磁盘文件中）
@@ -59,6 +60,38 @@ import sun.nio.ch.DirectBuffer;
  * 3. 预分配 MappedFile 和 文件预热
  */
 public class MappedFile extends ReferenceResource {
+
+    /**
+     * 堆内存(HeapByteBuffer)与堆外内存(DirectByteBuffer)？
+     * 1. 堆内存(HeapByteBuffer)
+     *  - 优点：是写在 JVM 堆的一个 Buffer，底层本质是一个数组，内容维护在 JVM 里面，读写效率会很高，并且堆内存的管理是由 JVM 的内存回收机制(GC)来管理
+     * 2. 堆外内存(DirectByteBuffer)：
+     *  - 优点：内容维护在内核缓存(操作系统分配的物理内存)中，跟外设(IO 设备)打交道时会快很多，因为 JVM 堆中的数据不能直接读取，而是需要把 JVM 里的数据读到一个内存块里，再从这个内存块中读取。
+     *         如果使用 DirectByteBuffer，则可以省去这一步，实现zero copy(零拷贝)；外设之所以要把 JVM 堆中的数据 copy 出来再操作，不是因为操作系统不能直接操作 JVM 内存，
+     *         而且因为 JVM 在进行 GC 时，会对数据进行移动，一旦出现这种问题，就会出现数据错乱的情况。
+     * 3. 堆外内存实现零拷贝
+     *  - HeapByteBuffer 是分配在 JVM 堆上(ByteBuffer.allocate())，后者分配在操作系统物理内存上(Buffer.allocateDirect())，JVM使用 C 库中的 malloc() 方法进行内存分配
+     *  - 底层 I/O 操作需要连续的内存 (JVM堆内存容易发生GC 和 对象移动)，所以在执行 write 操作时，需要把 HeapByteBuffer 数据拷贝到一个临时的(操作系统用户态)内存空间中，会多一次额外拷贝
+     *    而 DirectByteBuffer 则可以省去这个拷贝动作，这是 Java 层面上的"零拷贝"，在 Netty 中广泛应用。
+     *
+     * 零拷贝
+     * 1. RocketMQ 默认使用 MappedByteBuffer，其底层使用了操作系统的 mmap 机制。
+     * 2. MappedByteBuffer 底层使用了操作系统的 mmap 机制(将文件映射到内存中，然后直接操作内存，避免了文件I/O操作)，通过 FileChannel#map() 方法就会返回 MappedByteBuffer 对象。
+     *    不过 DirectByteBuffer 默认没有直接使用 mmap 机制，此外 DirectByteBuffer 是 MappedByteBuffer 的子类
+     * 3. 零拷贝的实现有两种：
+     *  - mmap : 适合小数据量读写，需要 4 次上下文切换(用户态->内核态 ->用户态，用户态-->内核态-->用户态 )，3次数据拷贝(数据从磁盘-->写入到内核缓冲区；从Socket缓冲区写入到网卡；将数据从内核缓冲区拷贝到应用缓存区，以及将数据从应用缓存区拷贝到Socket缓冲区，这两次是完全没有必要的，使用零拷贝来消除这两次额外的内存拷贝-->变成只拷贝一次)
+     *  - sendFile : 适合大文件传输，需要 2 次上下文切换，最少 2次数据拷贝
+     * 4. 两种零拷贝实现方式对比
+     *  - sendFile 方式，其实只需要 2 次上下午切换，sendFile + 网卡支持 SG-DMA 实现零拷贝技术，没有在内存层面上进行拷贝数据，也就是全程没有通过 cpu 进行数据拷贝，所有的数据都是通过 DMA 来进行传输的。
+     *    如果你要对数据修改，sendFile 就不合适了，而 mmap 将磁盘文件映射到内存，支持读和写。
+     *  - sendFile 相当于原汁原味的读写，直接将硬盘上的文件，传递给网卡，但这种方式不一定适用所有的场景，比如如果你需要从硬盘上读取文件，然后经过一定修改之后，再传递给网卡，就不适合用 sendFile。
+     *  - 对于 RocketMQ 来说，因为 RocketMQ 将所有队列的数据写入了 CommitLog ，消费者批量消费时，需要读出来，经过应用层过滤，所以就不能利用到 sendFile + DMA 的零拷贝方式，而只能用 mmap 。
+     *
+     * todo
+     *  transientStorePoolEnable 能缓解 PageCache 的压力背后关键如下:
+     *  消息先写入到堆外内存中，该内存启用了内存锁定机制，故消息的写入是接近直接操作内存，性能是可以得到保证。消息进入到堆外内存后，后台会启动一个线程，一批一批的提交到 PageCache，
+     *  即写消息时，对 PageCache 的写操作由单条写入变成了批量写入，降低了对 PageCache 的压力
+     */
 
     /**
      * 操作系统每页大小 默认 4kb
@@ -432,7 +465,7 @@ public class MappedFile extends ReferenceResource {
                  * todo 刷盘
                  * 1. 如果 writeBuffer 不为空，说明开启了堆外内存，那么对于刷盘来说，刷盘指针 flushedPosition 是指堆外内存的指针，应该等于上一次提交指针 committedPosition
                  * 因为上一次提交的数据就是进入 MappedByteBuffer(FileChanel) 中。注意：其实提交后 CommittedPosition 指针位置等于 wrotePosition
-                 * todo 只是刷盘的时候，只能刷提交到堆内存的数据，所以，不能使用 wrotePosition，在未提交之前，wrotePosition > CommittedPosition
+                 * todo 只是刷盘的时候，只能刷提交到 PageCache 的数据，所以，不能使用 wrotePosition，在未提交之前，wrotePosition > CommittedPosition
                  * 2. 如果 writeByteBuffer 为空，说明数据直接进入 MappedByteBuffer(FileChanel) 中，那么 wrotePosition 指针位置代表的是 MappedByteBuffer 的指针位置
                  */
                 // 当前需要刷盘的最大位置
@@ -614,6 +647,7 @@ public class MappedFile extends ReferenceResource {
         // 如果 pos + size <= 当前 MappedFile 的写入指针位置，也就是读取的数据在MappedFile 的有效范围内
         if ((pos + size) <= readPosition) {
             if (this.hold()) {
+                // 从 pos 位置读取 size 长度的内容
                 ByteBuffer byteBuffer = this.mappedByteBuffer.slice();
                 byteBuffer.position(pos);
                 ByteBuffer byteBufferNew = byteBuffer.slice();
@@ -631,13 +665,25 @@ public class MappedFile extends ReferenceResource {
         return null;
     }
 
+    /**
+     * 根据偏移量获取对应范围内的数据，即从当前 MappedFile 传入偏移量开始读取 pos ~ (readPosition - pos) 范围内的数据
+     * @param pos
+     * @return
+     */
     public SelectMappedBufferResult selectMappedBuffer(int pos) {
+        // 获取当前 MappedFile 文件的写入指针位置
         int readPosition = getReadPosition();
+
+        // pos 偏移量在当前 MappedFile 的有效范围内
         if (pos < readPosition && pos >= 0) {
             if (this.hold()) {
+                // 从 pos 偏移量开始读取长度为 (readPosition - pos) 的数据
                 ByteBuffer byteBuffer = this.mappedByteBuffer.slice();
+                // 从 pos 位置开始读取数据
                 byteBuffer.position(pos);
+                // 读取数据的长度为 当前 MappedFile 的写入指针位置 - pos
                 int size = readPosition - pos;
+                // byteBufferNew 保存的就是目标数据
                 ByteBuffer byteBufferNew = byteBuffer.slice();
                 byteBufferNew.limit(size);
                 return new SelectMappedBufferResult(this.fileFromOffset + pos, byteBufferNew, size, this);
@@ -647,6 +693,15 @@ public class MappedFile extends ReferenceResource {
         return null;
     }
 
+    /**
+     * 清理文件的映射内存并进行相应的计数器
+     * 1. 首先检查当前文件是否可用，如果可用则返回false，表示无法清理。
+     * 2. 然后检查当前文件是否已经清理过，如果是则返回true，表示无需重复清理。
+     * 3. 如果以上两个条件都不满足，则执行清理操作，包括清理mappedByteBuffer和更新映射文件计数器。
+     * 4. 最后返回true，表示清理操作完成
+     * @param currentRef
+     * @return
+     */
     @Override
     public boolean cleanup(final long currentRef) {
         if (this.isAvailable()) {
@@ -668,15 +723,26 @@ public class MappedFile extends ReferenceResource {
         return true;
     }
 
+    /**
+     * 销毁 MappedFile 封装的文件通道和物理文件
+     *
+     * @param intervalForcibly 拒绝被销毁的最大存活时间
+     * @return
+     */
     public boolean destroy(final long intervalForcibly) {
+        // 1. 关闭 MappedFile 并尝试释放资源
         this.shutdown(intervalForcibly);
 
+        // 2. 判断是否清理完成，完成标准是 引用次数 <= 0 && cleanupOver == true
         if (this.isCleanupOver()) {
             try {
+                // 3. 关闭文件通道
                 this.fileChannel.close();
                 log.info("close file channel " + this.fileName + " OK");
 
                 long beginTime = System.currentTimeMillis();
+
+                // 4. 删除物理文件
                 boolean result = this.file.delete();
                 log.info("delete file[REF:" + this.getRefCount() + "] " + this.fileName
                     + (result ? " OK, " : " Failed, ") + "W:" + this.getWrotePosition() + " M:"
@@ -704,9 +770,14 @@ public class MappedFile extends ReferenceResource {
     }
 
     /**
+     * 当前 MappedFile 的最大有效数据的位置，即写入指针的位置
      * @return The max position which have valid data
      */
     public int getReadPosition() {
+        /**
+         * 1. 如果 writeBuffer 为空，说明是直接写入 MappedByteBuffer ，直接返回 wrotePosition
+         * 2. 如果 writerBuffer 不为空，说明开启了堆外内存，需要返回 committedPosition 提交指针
+         */
         return this.writeBuffer == null ? this.wrotePosition.get() : this.committedPosition.get();
     }
 
@@ -714,6 +785,12 @@ public class MappedFile extends ReferenceResource {
         this.committedPosition.set(pos);
     }
 
+    /**
+     * 文件预热，把当前映射的文件，每一页遍历，写入一个 0字节
+     *
+     * @param type  刷盘类型 {@link FlushDiskType}
+     * @param pages 需要预热的页数
+     */
     public void warmMappedFile(FlushDiskType type, int pages) {
         long beginTime = System.currentTimeMillis();
         ByteBuffer byteBuffer = this.mappedByteBuffer.slice();
@@ -722,6 +799,7 @@ public class MappedFile extends ReferenceResource {
         for (int i = 0, j = 0; i < this.fileSize; i += MappedFile.OS_PAGE_SIZE, j++) {
             byteBuffer.put(i, (byte) 0);
             // force flush when flush disk type is sync
+            // 当刷新磁盘类型为同步时强制刷新
             if (type == FlushDiskType.SYNC_FLUSH) {
                 if ((i / OS_PAGE_SIZE) - (flush / OS_PAGE_SIZE) >= pages) {
                     flush = i;
@@ -750,6 +828,9 @@ public class MappedFile extends ReferenceResource {
         log.info("mapped file warm-up done. mappedFile={}, costTime={}", this.getFileName(),
             System.currentTimeMillis() - beginTime);
 
+        // 该方法内部：调用了 mlock 和 madvise(MADV_WILLNEED) 两个方法
+        // mlock：锁定内存区域，以防止该区域被交换到磁盘。锁定的内存区域从指针地址开始，大小为文件大小
+        // madvise 对内存区域进行预读取操作，以提高后续访问速度。预读取的内存从指针地址开始，大小为文件大小
         this.mlock();
     }
 
