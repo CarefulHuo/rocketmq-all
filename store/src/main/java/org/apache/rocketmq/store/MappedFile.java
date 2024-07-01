@@ -121,12 +121,12 @@ public class MappedFile extends ReferenceResource {
      */
 
     /**
-     * 当前 MappedFile 对象的当前写入位置(从 0 开始，内存映射文件的写指针)
+     * 当前 MappedFile 对象的当前写入位置(从 0 开始，内存映射文件的写指针)，(逻辑偏移量)
      */
     protected final AtomicInteger wrotePosition = new AtomicInteger(0);
 
     /**
-     * 当前 MappedFile 对象已提交的位置(提交指针)
+     * 当前 MappedFile 对象已提交的位置(提交指针) (逻辑偏移量)
      * 注意：
      * 1. 如果开启 transientStorePoolEnable 则数据会存储在 TransientStorePool 中；
      * 2. 通过 Commit 线程将数据提交到 FileChannel 中，最后通过 Flush 线程将数据持久化到磁盘
@@ -134,6 +134,7 @@ public class MappedFile extends ReferenceResource {
     protected final AtomicInteger committedPosition = new AtomicInteger(0);
 
     /**
+     * (逻辑偏移量)
      * 当前 MappedFile 对象已刷盘的位置，应该满足 committedPosition >= flushedPosition
      */
     private final AtomicInteger flushedPosition = new AtomicInteger(0);

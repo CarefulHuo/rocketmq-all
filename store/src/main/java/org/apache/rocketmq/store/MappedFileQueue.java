@@ -634,7 +634,7 @@ public class MappedFileQueue {
         int deleteCount = 0;
         if (null != mfs) {
 
-            // 从 1 到 倒数第二个文件，最后一个文件是活跃文件
+            // 遍历从 1 到 倒数第二个文件，因为最后一个文件是活跃文件
             int mfsLength = mfs.length - 1;
             for (int i = 0; i < mfsLength; i++) {
                 boolean destroy;

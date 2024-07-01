@@ -63,6 +63,44 @@ import org.apache.rocketmq.store.index.QueryOffsetResult;
 import org.apache.rocketmq.store.schedule.ScheduleMessageService;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * RocketMQ 存储核心类，Broker 持有。包含了很多对存储文件进行操作的 API，其他模块对消息实体的操作都是通过该类进行的。
+ * <p>
+ * 说明：
+ * 1. RocketMQ 存储使用的本地文件存储系统，效率高也可靠。
+ * 2. 主要涉及到三种类型的文件：CommitLog、ConsumeQueue、IndexFile。
+ * - CommitLog：所有主题的消息都存在 CommitLog 中，单个 CommitLog 默认大小是 1GB，并没文件名以起始偏移量为文件名。固定 20位，不足前面补 0.
+ *   比如 00000000000000000000 代表第一个文件，第二个文件名就是 00000000001073741824 表明起始偏移量是 1073741824。
+ *   以这样的方式命名用偏移量就能找到对应的文件。所有消息都是顺序写入的，超过文件大小就开启下一个文件。
+ * - ConsumeQueue：
+ * 1）消息消费队列，可以认为是 CommitLog 中的消息索引，因为 CommitLog 中的消息包含了所有主题的，所以通过索引才能更高效的查找消息
+ * 2）ConsumeQueue 存储的条目是固定大小，只会存储 8 字节的 CommitLog 物理偏移量 + 4 字节的消息长度 + 8 字节的消息 Tag 的哈希值，固定 20字节。
+ * 3）在实际存储中，ConsumeQueue 对应的是某个 Topic 下的某个 Queue，每个文件约 5.72M，由 30w 条数据组成，即 30w * 20byte
+ * 4) 消费者是先从 ConsumeQueue 来得到消息真实的物理地址，然后再去 CommitLog 获取消息
+ * - IndexFile：
+ * 1）索引文件，是额外提供查询消息的手段，不影响主流程
+ * 2）通过消息id、key或者时间区间来查询对应的消息，文件名以创建时间戳命名，固定的单个 IndexFile大小约为 400MB，一个 IndexFile 存储 2000w 个索引。
+ * <p>
+ * 消息存储流程：
+ * 1）消息到了，先存储到 CommitLog ，然后会有一个 ReputMessageService 线程近乎实时地将消息转发给消息消费队列文件与索引文件，也就是说异步生成的。
+ * 2）CommitLog 采用混合存储，也就是所有的 Topic 都存储在一起，顺序追加写入，文件名是用起始偏移量命名
+ * 3）消息先写入 CommitLog，再通过后台线程分发到 ConsumeQueue 和 IndexFile 中。
+ * 4）消费者先读取 ConsumeQueue 得到消息真正的物理偏移量，然后访问 CommitLog 得到真正的消息。
+ * 5）利用了 mmap 机制少了一次拷贝，利用文件预分配和文件预热提升性能
+ * 6）提供同步和异步刷盘，根据场景选择合适的刷盘机制
+ * <p>
+ * 文件清除机制 - {@link DefaultMessageStore#addScheduleTask()} 使用的是定时任务的方式，在 Broker 启动时会触发 {@link org.apache.rocketmq.store.DefaultMessageStore#start()}
+ * 1) RocketMQ 操作 CommitLog 和 ConsumeQueue 文件，都是基于内存映射文件(MappedFile)，Broker 在启动时加载 CommitLog、ConsumeQueue 对应的文件夹，读取物理文件到内存以创建对应的内存映射文件。
+ *    为了避免内存与磁盘的浪费，不可能将消息永久存储在消息服务器上，所以需要一种机制来删除已过期的文件。
+ * 2）RocketMQ 顺序写 CommitLog 、ConsumeQueue 文件，所有写操作全部落在最后一个 CommitLog 或 ConsumeQueue 对应的 MappedFile 文件上，之前的文件在下一个文件创建后，将不会再被更新
+ * 3）RocketMQ 清除过期文件的方法是：如果非当前写文件在一定时间间隔内没有再次被更新，则认为是过期文件，可以被删除，RocketMQ 不会管这个文件上的消息是否被全部消费，默认每个文件的过期时间是 72 小时。
+ * 4）消息是被顺序存储在 CommitLog 文件的，并且消息大小不定长，所以消息的清理是不可能以消息为单位进行清理的，而是以 CommitLog 文件为单位进行清理的，否则会急剧下降清理效率，并且删除逻辑的实现也会很复杂。
+ * 额外说明：
+ * 1）用户应该在磁盘使用率达到 0.85 之前监控磁盘使用率。RocketMQ 设置了两个级别的服务退化：
+ *   - 当磁盘使用率达到 0.85 时，立即删除最旧的文件，以缓解可用服务(RW(读和写))的磁盘压力；
+ *   - 当磁盘使用率达到 0.9 时，禁止对可用服务(R)进行写操作。
+ *
+ */
 public class DefaultMessageStore implements MessageStore {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
