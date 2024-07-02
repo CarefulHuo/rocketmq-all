@@ -47,7 +47,7 @@ public class MessageStoreConfig {
 
     // ConsumeQueue file size,default is 30W
     /**
-     * ConsumeQueue 存储的内容长度是定长的(20字节)，内容包含 CommitLog offset(偏移量)、size 、tag scode
+     * ConsumeQueue 存储的内容长度是定长的(20字节)，内容包含 CommitLog 中 消息的offset(物理偏移量)、消息的size 、消息的tag scode
      * ConsumerQueue 文件大小是 30w * ConsumeQueue.CQ_STORE_UNIT_SIZE
      */
     private int mappedFileSizeConsumeQueue = 300000 * ConsumeQueue.CQ_STORE_UNIT_SIZE;
