@@ -116,7 +116,7 @@ public class MessageStoreConfig {
 
     // CommitLog removal interval
     /**
-     * 删除 CommitLog 文件的时间间隔，默认为 800ms
+     * 删除 CommitLog 文件的时间间隔
      */
     private int deleteCommitLogFilesInterval = 100;
 

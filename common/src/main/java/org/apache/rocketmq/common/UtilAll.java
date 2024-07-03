@@ -203,6 +203,11 @@ public class UtilAll {
             cal.get(Calendar.SECOND));
     }
 
+    /**
+     * 获取 CommitLog 目录所在磁盘分区的磁盘使用率
+     * @param path
+     * @return
+     */
     public static double getDiskPartitionSpaceUsedPercent(final String path) {
         if (null == path || path.isEmpty()) {
             log.error("Error when measuring disk space usage, path is null or empty, path : {}", path);
@@ -211,6 +216,7 @@ public class UtilAll {
 
 
         try {
+            // 封装 $user.homg/store/commitlog 目录
             File file = new File(path);
 
             if (!file.exists()) {
@@ -219,12 +225,16 @@ public class UtilAll {
             }
 
 
+            // commitlog 目录所在磁盘分区总的存储容量
             long totalSpace = file.getTotalSpace();
 
             if (totalSpace > 0) {
+                // 剩余空间
                 long freeSpace = file.getFreeSpace();
+                // 已使用空间
                 long usedSpace = totalSpace - freeSpace;
 
+                // CommitLog 目录所在磁盘分区的磁盘使用率
                 return usedSpace / (double) totalSpace;
             }
         } catch (Exception e) {
