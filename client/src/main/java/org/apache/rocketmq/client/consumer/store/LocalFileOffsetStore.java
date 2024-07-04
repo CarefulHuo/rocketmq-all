@@ -36,16 +36,36 @@ import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
 /**
+ * 用于广播模式存储消费进度
+ * 说明：
+ * 将消费进度以固定的格式存储在消费者本地文件中
  * Local storage implementation
  */
 public class LocalFileOffsetStore implements OffsetStore {
+
+    /**
+     * Offset 文件存储根目录，默认为用户主目录
+     */
     public final static String LOCAL_OFFSET_STORE_DIR = System.getProperty(
         "rocketmq.client.localOffsetStoreDir",
         System.getProperty("user.home") + File.separator + ".rocketmq_offsets");
     private final static InternalLogger log = ClientLogger.getLog();
     private final MQClientInstance mQClientFactory;
+
+    /**
+     * 消费组名称
+     */
     private final String groupName;
+
+    /**
+     * 具体的消费进度保存文件名(全路径)
+     */
     private final String storePath;
+
+    /**
+     * 内存中的 Offset 进度保存，以 MessageQueue 为 key，偏移量为 value
+     * todo 说明：是针对消息队列的逻辑偏移量
+     */
     private ConcurrentMap<MessageQueue, AtomicLong> offsetTable =
         new ConcurrentHashMap<MessageQueue, AtomicLong>();
 
@@ -58,6 +78,19 @@ public class LocalFileOffsetStore implements OffsetStore {
             "offsets.json";
     }
 
+    /**
+     * 从本地文件加载消费进度，主要读取 Offsets.json 或者 offsets.json.bak 中的内容，然后将 json 转为 map
+     * 具体的 json 内容如下：
+     *{
+     *     "offsetTable": {
+     *         {"brokerName": "broker-a","queueId": 3,"topic": "TopicTest"}: 2,
+     *         {"brokerName": "broker-a","queueId": 2,"topic": "TopicTest"}: 1,
+     *         {"brokerName": "broker-a","queueId": 1,"topic": "TopicTest"}: 2,
+     *         {"brokerName": "broker-a","queueId": 0,"topic": "TopicTest"}: 1,
+     *     }
+     * }
+     * @throws MQClientException
+     */
     @Override
     public void load() throws MQClientException {
         OffsetSerializeWrapper offsetSerializeWrapper = this.readLocalOffset();
@@ -97,6 +130,7 @@ public class LocalFileOffsetStore implements OffsetStore {
         if (mq != null) {
             switch (type) {
                 case MEMORY_FIRST_THEN_STORE:
+                // 从内存中读取
                 case READ_FROM_MEMORY: {
                     AtomicLong offset = this.offsetTable.get(mq);
                     if (offset != null) {
@@ -105,6 +139,7 @@ public class LocalFileOffsetStore implements OffsetStore {
                         return -1;
                     }
                 }
+                // 从文件中读取
                 case READ_FROM_STORE: {
                     OffsetSerializeWrapper offsetSerializeWrapper;
                     try {
@@ -128,6 +163,10 @@ public class LocalFileOffsetStore implements OffsetStore {
         return -1;
     }
 
+    /**
+     * 持久化消费进度，将消费进度以 json 字符串的形式写入文件
+     * @param mqs
+     */
     @Override
     public void persistAll(Set<MessageQueue> mqs) {
         if (null == mqs || mqs.isEmpty())

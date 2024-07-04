@@ -84,6 +84,10 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 1. RocketMQ 客户端中的顶层类，大多数情况下，可以简单理解为每个客户端对应一个 MQClientInstance 实例
+ * 2. 消息客户端实例
+ */
 public class MQClientInstance {
     private final static long LOCK_TIMEOUT_MILLIS = 3000;
     private final InternalLogger log = ClientLogger.getLog();
@@ -1016,6 +1020,11 @@ public class MQClientInstance {
         return this.consumerTable.get(group);
     }
 
+    /**
+     * 根据 BrokerName 查找对应 Broker 地址，优先主服务
+     * @param brokerName
+     * @return
+     */
     public FindBrokerResult findBrokerAddressInAdmin(final String brokerName) {
         String brokerAddr = null;
         boolean slave = false;
