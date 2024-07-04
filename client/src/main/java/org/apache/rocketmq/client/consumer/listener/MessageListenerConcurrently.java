@@ -20,6 +20,7 @@ import java.util.List;
 import org.apache.rocketmq.common.message.MessageExt;
 
 /**
+ * 并发接收异步传递的消息
  * A MessageListenerConcurrently object is used to receive asynchronously delivered messages concurrently
  */
 public interface MessageListenerConcurrently extends MessageListener {

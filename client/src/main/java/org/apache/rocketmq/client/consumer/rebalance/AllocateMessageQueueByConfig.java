@@ -20,6 +20,9 @@ import java.util.List;
 import org.apache.rocketmq.client.consumer.AllocateMessageQueueStrategy;
 import org.apache.rocketmq.common.message.MessageQueue;
 
+/**
+ * 根据配置，为每个消费者分配固定的消息队列
+ */
 public class AllocateMessageQueueByConfig implements AllocateMessageQueueStrategy {
     private List<MessageQueue> messageQueueList;
 
@@ -38,6 +41,10 @@ public class AllocateMessageQueueByConfig implements AllocateMessageQueueStrateg
         return messageQueueList;
     }
 
+    /**
+     * 为指定的消费者，设置消息队列集合
+     * @param messageQueueList
+     */
     public void setMessageQueueList(List<MessageQueue> messageQueueList) {
         this.messageQueueList = messageQueueList;
     }

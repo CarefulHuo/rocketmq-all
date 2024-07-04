@@ -19,10 +19,17 @@ package org.apache.rocketmq.client.common;
 
 import java.util.Random;
 
+/**
+ * 使用本地线程保存消息队列的序号，线程隔离
+ */
 public class ThreadLocalIndex {
     private final ThreadLocal<Integer> threadLocalIndex = new ThreadLocal<Integer>();
     private final Random random = new Random();
 
+    /**
+     * 基于随机递增，选择消息队列
+     * @return
+     */
     public int incrementAndGet() {
         Integer index = this.threadLocalIndex.get();
         if (null == index) {
