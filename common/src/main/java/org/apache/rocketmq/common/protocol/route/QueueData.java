@@ -20,11 +20,38 @@
  */
 package org.apache.rocketmq.common.protocol.route;
 
+/**
+ * 队列描述信息，每个对象表示 Broker 分布 Topic 队列情况
+ * todo 特别说明：
+ * 1. Topic 是一个逻辑上的概念，实际上在 Broker 上以 Queue 的形式存储，也就是 topic 在 Broker 上会划分成几个逻辑队列
+ *    每个逻辑队列保存一部分消息，但是保存的消息实际上并不是实际的消息，而是指向 CommitLog 的 消息索引。
+ * 2. 每个队列信息的对应类 QueueData 中，还保存了 BrokerName，需要注意的是，这个 BrokerName 并不是真正的某个 Broker 的物理地址，
+ *    它对应的是一组 Broker 节点，包括一个主节点和若干个从节点
+ */
 public class QueueData implements Comparable<QueueData> {
+    /**
+     *  Broker 名称
+     */
     private String brokerName;
+
+    /**
+     * 读队列数量
+     */
     private int readQueueNums;
+
+    /**
+     * 写队列数量
+     */
     private int writeQueueNums;
+
+    /**
+     * 权限
+     */
     private int perm;
+
+    /**
+     * 同步复制还是异步复制
+     */
     private int topicSysFlag;
 
     public int getReadQueueNums() {

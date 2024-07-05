@@ -30,11 +30,23 @@ public interface MQProducerInner {
     TransactionCheckListener checkListener();
     TransactionListener getCheckListener();
 
+    /**
+     * 回查事务状态
+     *
+     * @param addr
+     * @param msg
+     * @param checkRequestHeader
+     */
     void checkTransactionState(
         final String addr,
         final MessageExt msg,
         final CheckTransactionStateRequestHeader checkRequestHeader);
 
+    /**
+     * 更新 Topic 发布信息
+     * @param topic
+     * @param info
+     */
     void updateTopicPublishInfo(final String topic, final TopicPublishInfo info);
 
     boolean isUnitMode();

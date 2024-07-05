@@ -23,9 +23,27 @@ import java.util.List;
 import java.util.Random;
 import org.apache.rocketmq.common.MixAll;
 
+/**
+ *  Broker 信息
+ *  1. BrokerData 中保存了集群名称 cluster，BrokerName 和 一个保存 Broker 物理地址的 Map。
+ *  2. BrokerName 并不是某个 Broker 的物理地址，而是对应的一组 Broker 节点，包括一个主节点和若干个从节点
+ *  因此使用一个 BrokerAddrs 来保存具体的 Broker 的物理地址
+ */
 public class BrokerData implements Comparable<BrokerData> {
+
+    /**
+     * Broker 所属集群
+     */
     private String cluster;
+
+    /**
+     * Broker 名称
+     */
     private String brokerName;
+
+    /**
+     * brokerId = 0 主节点 master，brokerId > 0 从节点 slave
+     */
     private HashMap<Long/* brokerId */, String/* broker address */> brokerAddrs;
 
     private final Random random = new Random();

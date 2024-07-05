@@ -25,10 +25,31 @@ import java.util.HashMap;
 import java.util.List;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
+/**
+ * 每个主题的路由信息，用一个 TopicToutedData 对象来表示
+ */
 public class TopicRouteData extends RemotingSerializable {
+
+    /**
+     * Topic 对应的有序消息相关的配置
+     */
     private String orderTopicConf;
+
+    /**
+     * Topic 队列元数据，即保存了 topic 中所有的队列信息
+     * todo 是 Topic 下队列分布在不同的 Broker 集合，即 topic 的队列分布在哪些 Broker 上
+     */
     private List<QueueData> queueDatas;
+
+    /**
+     * Topic 分布的 Broker 元数据，即保存了 Topic 相关所有的 Broker 信息
+     * todo 是 Topic 所有队列分布的 Broker 集合
+     */
     private List<BrokerData> brokerDatas;
+
+    /**
+     * broker 地址到 FilterServer 名的映射
+     */
     private HashMap<String/* brokerAddr */, List<String>/* Filter Server */> filterServerTable;
 
     public TopicRouteData cloneTopicRouteData() {

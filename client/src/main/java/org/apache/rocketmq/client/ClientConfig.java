@@ -30,12 +30,26 @@ import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 
 /**
+ * todo 客户端的公共配置类，配置都是 get、set形式，每个参数都可以用 Spring 来配置，也可以在代码里配置
+ *
  * Client Common configuration
  */
 public class ClientConfig {
     public static final String SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY = "com.rocketmq.sendMessageWithVIPChannel";
+
+    /**
+     * todo NameSrv 地址，客户端具体实例设置
+     */
     private String namesrvAddr = NameServerAddressUtils.getNameServerAddresses();
+
+    /**
+     * 客户端 IP
+     */
     private String clientIP = RemotingUtil.getLocalAddress();
+
+    /**
+     * 客户端实例名
+     */
     private String instanceName = System.getProperty("rocketmq.client.name", "DEFAULT");
     private int clientCallbackExecutorThreads = Runtime.getRuntime().availableProcessors();
     protected String namespace;
@@ -62,6 +76,11 @@ public class ClientConfig {
 
     private LanguageCode language = LanguageCode.JAVA;
 
+    /**
+     * 构建客户端实例Id
+     * 实例Id组成：客户端IP @ instanceName @ unitName
+     * @return
+     */
     public String buildMQClientId() {
         // 构建MQ客户端id
         // MQ客户端id：客户端IP@客户端实例名称@单位名称(为空则不拼接)

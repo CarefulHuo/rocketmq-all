@@ -100,17 +100,39 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     private final InternalLogger log = ClientLogger.getLog();
     private final Random random = new Random();
     private final DefaultMQProducer defaultMQProducer;
+
+    /**
+     * Producer 本地缓存的 Topic 信息表 -- 由路由信息转换而得到的 (todo 注意：起始的时候是全部的队列)
+     * <p>
+     * 根据 Topic 路由设置该字段的情况如下：
+     *
+     * @see MQClientInstance#updateTopicRouteInfoFromNameServer(java.lang.String, boolean, org.apache.rocketmq.client.producer.DefaultMQProducer)
+     */
     private final ConcurrentMap<String/* topic */, TopicPublishInfo> topicPublishInfoTable =
         new ConcurrentHashMap<String, TopicPublishInfo>();
     private final ArrayList<SendMessageHook> sendMessageHookList = new ArrayList<SendMessageHook>();
     private final ArrayList<EndTransactionHook> endTransactionHookList = new ArrayList<EndTransactionHook>();
     private final RPCHook rpcHook;
     private final BlockingQueue<Runnable> asyncSenderThreadPoolQueue;
+
+    /**
+     * 事务状态回查的线程池
+     */
     private final ExecutorService defaultAsyncSenderExecutor;
     private final Timer timer = new Timer("RequestHouseKeepingService", true);
     protected BlockingQueue<Runnable> checkRequestQueue;
     protected ExecutorService checkExecutor;
+
+    /**
+     * 服务状态
+     * todo RocketMQ 使用一个成员变量 ServiceState 来记录和管理自身的服务状态，这实际上是状态模式(state Pattern)的变种实现
+     */
     private ServiceState serviceState = ServiceState.CREATE_JUST;
+
+    /**
+     * 客户端实例
+     * todo 封装了客户端一些通用的业务逻辑，无论是 producer 还是 Consumer 最终需要跟服务端进行交互时，都需要调用这个类中的方法，
+     */
     private MQClientInstance mQClientFactory;
     private ArrayList<CheckForbiddenHook> checkForbiddenHookList = new ArrayList<CheckForbiddenHook>();
     private int zipCompressLevel = Integer.parseInt(System.getProperty(MixAll.MESSAGE_COMPRESS_LEVEL, "5"));

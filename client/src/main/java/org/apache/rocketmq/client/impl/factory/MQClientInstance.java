@@ -86,40 +86,120 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /**
  * 1. RocketMQ 客户端中的顶层类，大多数情况下，可以简单理解为每个客户端对应一个 MQClientInstance 实例
- * 2. 消息客户端实例
+ * 2. 消息客户端实例，封装对 NameSrv Broker 的 API 调用，提供给 Producer、Consumer 使用
  */
 public class MQClientInstance {
     private final static long LOCK_TIMEOUT_MILLIS = 3000;
     private final InternalLogger log = ClientLogger.getLog();
+
+    /**
+     * 配置信息
+     */
     private final ClientConfig clientConfig;
+
+    /**
+     * MQClientInstance 在同一台机器上的创建序号
+     */
     private final int instanceIndex;
+
+    /**
+     * 客户端Id：即可能是生产者Id，也可能是消费者Id
+     */
     private final String clientId;
     private final long bootTimestamp = System.currentTimeMillis();
+
+    /**
+     * 生产者组 到 消息生产者的映射
+     */
     private final ConcurrentMap<String/* group */, MQProducerInner> producerTable = new ConcurrentHashMap<String, MQProducerInner>();
+
+    /**
+     * 消费者组 到 消息消费者的映射
+     */
     private final ConcurrentMap<String/* group */, MQConsumerInner> consumerTable = new ConcurrentHashMap<String, MQConsumerInner>();
+
+    /**
+     * 主要处理运维命令
+     */
     private final ConcurrentMap<String/* group */, MQAdminExtInner> adminExtTable = new ConcurrentHashMap<String, MQAdminExtInner>();
+
+    /**
+     * 网络通信配置
+     */
     private final NettyClientConfig nettyClientConfig;
+
+    /**
+     * MQ 网络通信客户端封装类
+     */
     private final MQClientAPIImpl mQClientAPIImpl;
+
+    /**
+     * MQ 管理命令实现类
+     */
     private final MQAdminImpl mQAdminImpl;
+
+    /**
+     * Topic 路由信息(原始的，从 NameSrv 获取的)
+     * todo 客户端实例缓存的是从 NameSrv 拉取的 Topic 路由信息的元数据；而实例对应的生产者或消费者缓存的是 Topic 路由信息的加工版本--> Topic 发布信息
+     * - TopicRouteData 中的 QueueData 没有 Topic 信息
+     * - MessageQueue 中有 Topic 信息
+     */
     private final ConcurrentMap<String/* Topic */, TopicRouteData> topicRouteTable = new ConcurrentHashMap<String, TopicRouteData>();
     private final Lock lockNamesrv = new ReentrantLock();
     private final Lock lockHeartbeat = new ReentrantLock();
+
+    /**
+     * Topic 路由信息中的 Broker 信息，存储在 NameServer ，缓存在本地客户端，供生产者、消费者共同使用
+     * 即 Broker 名称和 Broker 地址相关 Map
+     * todo 客户端与 Broker 通信，需要通过 MessageQueue 中的 BrokerName 结合当前缓存信息，确定具体的 Broker 地址
+     */
     private final ConcurrentMap<String/* Broker Name */, HashMap<Long/* brokerId */, String/* address */>> brokerAddrTable =
         new ConcurrentHashMap<String, HashMap<Long, String>>();
     private final ConcurrentMap<String/* Broker Name */, HashMap<String/* address */, Integer>> brokerVersionTable =
         new ConcurrentHashMap<String, HashMap<String, Integer>>();
+
+
+
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
         @Override
         public Thread newThread(Runnable r) {
             return new Thread(r, "MQClientFactoryScheduledThread");
         }
     });
+
+    /**
+     * 远程通信客户端请求处理器
+     */
     private final ClientRemotingProcessor clientRemotingProcessor;
+
+    /**
+     * 拉取消息任务，一个 MQClientInstance, 只会启动一个消息拉取任务
+     */
     private final PullMessageService pullMessageService;
+
+    /**
+     * 均衡消息队列服务定时任务
+     */
     private final RebalanceService rebalanceService;
+
+    /**
+     * 消息生产者默认实例
+     */
     private final DefaultMQProducer defaultMQProducer;
+
+    /**
+     * 消费端统计
+     */
     private final ConsumerStatsManager consumerStatsManager;
+
+    /**
+     * 心跳包发送次数
+     */
     private final AtomicLong sendHeartbeatTimesTotal = new AtomicLong(0);
+
+    /**
+     * 客户端状态
+     */
     private ServiceState serviceState = ServiceState.CREATE_JUST;
     private Random random = new Random();
 
@@ -127,11 +207,20 @@ public class MQClientInstance {
         this(clientConfig, instanceIndex, clientId, null);
     }
 
+    /**
+     * 客户端实例封装了 RocketMQ 的网络处理 API，是生产者、消费者与 NameSrv 、Broker 交互的网络通道
+     * @param clientConfig
+     * @param instanceIndex
+     * @param clientId
+     * @param rpcHook
+     */
     public MQClientInstance(ClientConfig clientConfig, int instanceIndex, String clientId, RPCHook rpcHook) {
         // MQ客户端配置
         this.clientConfig = clientConfig;
         // MQ客户端实例索引，每个实例对应一个
         this.instanceIndex = instanceIndex;
+
+        /**---------- 封装网络 API start---------*/
         // netty客户端配置
         this.nettyClientConfig = new NettyClientConfig();
         // netty客户端配置-设置客户端回调执行线程数
@@ -140,8 +229,18 @@ public class MQClientInstance {
         this.nettyClientConfig.setUseTLS(clientConfig.isUseTLS());
         // 创建客户端远程处理器，将 MQClientFactory 实例注入到 ClientRemotingProcessor 实例中
         this.clientRemotingProcessor = new ClientRemotingProcessor(this);
-        // 创建客户端API实例，nettyClientConfig、clientRemotingProcessor、Rpc钩子、客户端配置，注入到 MQClientAPIImpl 实例中
+
+        /**
+         * todo 创建客户端API实例，nettyClientConfig、clientRemotingProcessor、Rpc钩子、客户端配置，注入到 MQClientAPIImpl 实例中
+         *  封装网络处理的客户端
+         *  客户端实例创建时，创建 网络通信客户端封装类
+         */
         this.mQClientAPIImpl = new MQClientAPIImpl(this.nettyClientConfig, this.clientRemotingProcessor, rpcHook, clientConfig);
+
+        /**---------- 封装网络 API end---------*/
+
+
+        // todo 更新 NameSrv 地址
         if (this.clientConfig.getNamesrvAddr() != null) {
             // 更新 NameServerAddressList 集合
             this.mQClientAPIImpl.updateNameServerAddressList(this.clientConfig.getNamesrvAddr());
@@ -149,16 +248,21 @@ public class MQClientInstance {
         }
 
         this.clientId = clientId;
+
         // 创建消息管理实例
         this.mQAdminImpl = new MQAdminImpl(this);
-        // 创建消息拉取实例
+
+        // todo 创建消息拉取实例
         this.pullMessageService = new PullMessageService(this);
-        // 创建消息平衡实例
+
+        // todo 创建均衡消息队列任务
         this.rebalanceService = new RebalanceService(this);
-        // 创建默认消费生产者，并重置客户端配置
+
+        // todo 创建生产者组名为 CLIENT_INNER_PRODUCER 的生产者
         this.defaultMQProducer = new DefaultMQProducer(MixAll.CLIENT_INNER_PRODUCER_GROUP);
         this.defaultMQProducer.resetClientConfig(clientConfig);
-        // 创建消费者统计管理器
+
+        // todo 创建消费者统计管理器
         this.consumerStatsManager = new ConsumerStatsManager(this.scheduledExecutorService);
 
         log.info("Created a new client Instance, InstanceIndex:{}, ClientID:{}, ClientConfig:{}, ClientVersion:{}, SerializerType:{}",
@@ -168,6 +272,14 @@ public class MQClientInstance {
             MQVersion.getVersionDesc(MQVersion.CURRENT_VERSION), RemotingCommand.getSerializeTypeConfigInThisServer());
     }
 
+    /**
+     * todo Topic 路由信息转换成 Topic 发布信息，也就是将 Topic 元数据信息和 Topic 分布的 Broker 元数据融合成 Topic 发布信息
+     * 1. Topic 的路由：Topic 对应队列信息和 Broker 信息
+     * 2. 根据 Topic 的路由，创建写队列集合 -- 写消息队列诞生
+     * @param topic
+     * @param route
+     * @return
+     */
     public static TopicPublishInfo topicRouteData2TopicPublishInfo(final String topic, final TopicRouteData route) {
         TopicPublishInfo info = new TopicPublishInfo();
         info.setTopicRouteData(route);
