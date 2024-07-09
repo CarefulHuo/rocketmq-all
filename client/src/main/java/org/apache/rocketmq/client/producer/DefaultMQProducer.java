@@ -56,13 +56,34 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
  * <p> <strong>Thread Safety:</strong> After configuring and starting process, this class can be regarded as thread-safe
  * and used among multiple threads context. </p>
  */
+
+/**
+ * 说明：
+ * 1. DefaultMQProducer 实现了接口 MQProducer ，它里面的实现大多没有任何的业务逻辑，只是封装了对其他实现类的方法调用，也可以是门面的一部分
+ * 2. Producer 的大部分业务逻辑的视线都是在类 DefaultMQProducerImpl
+ * 3. Producer 是一个有状态的服务，在发送消息之前，需要先启动 Producer
+ *
+ * 简介：
+ * 1. 该类是应用用来投递消息的入口，开箱即用，可通过无参构造方法快速创建一个生产者。
+ * 2. 主要负责消息的发送、支持 Sync/Async/Oneway 三种发送模式，并且这些发送方式均支持批量发送，可以通过该类提供的 getter/setter 方法，调整发送者的参数。
+ * 3. 提供了多个 send 方法，每个 send 方法略有不同
+ * 4. 该类是线程安全的，在配置并启动完成后，可在多个线程间安全共享
+ */
 public class DefaultMQProducer extends ClientConfig implements MQProducer {
+
+    private final InternalLogger log = ClientLogger.getLog();
+
+    /**
+     * ------------------------- 字段摘要--------------------------
+     */
 
     /**
      * Wrapping internal implementations for virtually all methods presented in this class.
+     * todo 生产者的内部默认实现
+     * 生产者的内部默认实现，在构造生产者时，内部自动初始化，提供了大部分方法的内部实现
      */
     protected final transient DefaultMQProducerImpl defaultMQProducerImpl;
-    private final InternalLogger log = ClientLogger.getLog();
+
     /**
      * Producer group conceptually aggregates all producer instances of exactly same role, which is particularly
      * important when transactional messages are involved. </p>
@@ -70,26 +91,44 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * For non-transactional messages, it does not matter as long as it's unique per process. </p>
      *
      * See {@linktourl http://rocketmq.apache.org/docs/core-concept/} for more discussion.
+     *
+     * 生产者组在概念上聚合了完全相同角色的所有生产者实例，这在涉及事务性消息时尤为重要。
+     * 因为-如果原始生产者在事务之后崩溃，那么broker可以联系同一生产者分组的不同生产者实例来提交或回滚事务。
+     * 对于非事务性消息，只要它在每个进程中是唯一的，它就无关紧要。<p>
      */
     private String producerGroup;
 
     /**
+     * 在发送消息时，自动创建服务器不存在的 Topic，需要指定 key , 该 key 可用于配置发送消息所在 Topic 的默认路由
+     * todo 建议 Test 或 Demo 使用，生产环境不建议打开自动创建配置
+     * <p> TBW102
+     *
      * Just for testing or demo program
      */
     private String createTopicKey = TopicValidator.AUTO_CREATE_TOPIC_KEY_TOPIC;
 
     /**
+     * todo 这个参数是控制客户端在生产/消费的时候，会访问同一个 Topic 的队列数量，主要用于获取默认主题 TBW102 的路由信息是
+     * 如：TBW102 主题有 100 个队列，对于客户端来说，可能没必要 100 个队列都访问，只需要使用其中的几个队列就行了
+     * todo 附加：
+     * writeQueueNums 和 readQueueNums 是服务端用来控制每个客户端在生产和消费的时候，分别方位多少个消息队列的
+     * 这两个参数是服务端参数，优先级是高于客户端控制的参数 defaultTopicQueueNums 的，一般用于非自动创建主题的情况。
+     * 非自动创建主题，可以在手动创建 Topic 时指定读写队列个数；
+     * 自动创建主题，则基于默认主题 TBW102 创建队列，队列个数取 Max.min(defaultTopicQueueNums,TBW102主题下队列个数(默认是 8 个，todo 这个是系统固定的，启动后无法通过 Console 修改))
+     *
      * Number of queues to create per default topic.
      */
     private volatile int defaultTopicQueueNums = 4;
 
     /**
+     * 发送消息的超时时间，默认值 3000ms
      * Timeout for sending messages.
      */
     private int sendMsgTimeout = 3000;
 
     /**
      * Compress message body threshold, namely, message body larger than 4k will be compressed on default.
+     * 压缩消息体的阈值，大于 4k 的消息体都将默认进行压缩
      */
     private int compressMsgBodyOverHowmuch = 1024 * 4;
 
@@ -97,6 +136,10 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Maximum number of retry to perform internally before claiming sending failure in synchronous mode. </p>
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
+     * <p>
+     *  同步模式下，在返回发送失败之前，内部尝试重新发送消息的最大次数，默认值为 2 即，默认情况下一条消息最多被投递 3 次
+     *  todo 注意：极端情况下，这可能导致消息的重复消费
+     * </p>
      */
     private int retryTimesWhenSendFailed = 2;
 
@@ -104,44 +147,71 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Maximum number of retry to perform internally before claiming sending failure in asynchronous mode. </p>
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
+     * <p>
+     *  异步模式下，在返回发送失败之前，内部尝试重新发送消息的最大次数，默认值为 2，即默认情况下一条消息最多会被投递 3 次
+     *  todo 注意：极端情况下，这可能导致消息的重复消费
+     * </p>
      */
     private int retryTimesWhenSendAsyncFailed = 2;
 
     /**
      * Indicate whether to retry another broker on sending failure internally.
+     * <p>
+     *  同步模式下，消息发送失败时，是否重试其他 Broker ，默认值为 false
+     *  todo 注意：此配置关闭时，消息发送时除了客户端异常、网络异常的情况，其他情况会忽略 retryTimesWhenSendFailed 配置
+     * </p>
      */
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
     /**
      * Maximum allowed message size in bytes.
+     * <p>
+     * 消息的最大长度
+     * 消息的最大大小，当消息体的字节数超过 maxMessageSize 时，就发送失败
+     * 默认 1024 * 1024 * 4 字节
      */
     private int maxMessageSize = 1024 * 1024 * 4; // 4M
 
     /**
      * Interface of asynchronous transfer data
+     * <p>
+     * 消息追踪器，使用 rcpHook 来追踪消息
+     * 在开启消息追踪后，该类通过 hook 的方式把消息生产者、消息存储的Broker、消费者消费消息的信息像链路一样记录下来
+     * 在构造生产者时，根据构造入参 enableMsgTrace 来决定是否创建该对象
+     * </p>
      */
     private TraceDispatcher traceDispatcher = null;
 
     /**
+     * --------------------------- 构造方法摘要----------------------------------
+     */
+
+    /**
      * Default constructor.
+     * <p>
+     * 由默认参数构建一个生产者
      */
     public DefaultMQProducer() {
         this(null, MixAll.DEFAULT_PRODUCER_GROUP, null);
     }
 
     /**
+     * 使用指定的 hook 钩子函数创建一个生产者
+     * <p>
      * Constructor specifying the RPC hook.
      *
-     * @param rpcHook RPC hook to execute per each remoting command execution.
+     * @param rpcHook RPC hook to execute per each remoting command execution. 每次执行远程处理命令时要执行的 RPC 钩子。
      */
     public DefaultMQProducer(RPCHook rpcHook) {
         this(null, MixAll.DEFAULT_PRODUCER_GROUP, rpcHook);
     }
 
     /**
+     * 使用指定的分组名创建一个生产者
+     * <p>
      * Constructor specifying producer group.
      *
-     * @param producerGroup Producer group, see the name-sake field.
+     * @param producerGroup (生产者名称) Producer group, see the name-sake field.
      */
     public DefaultMQProducer(final String producerGroup) {
         this(null, producerGroup, null);
@@ -150,14 +220,16 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     /**
      * Constructor specifying producer group.
      *
-     * @param producerGroup Producer group, see the name-sake field.
-     * @param rpcHook RPC hook to execute per each remoting command execution.
-     * @param enableMsgTrace Switch flag instance for message trace.
+     * @param producerGroup Producer group, see the name-sake field. 生产者分组名称
+     * @param rpcHook RPC hook to execute per each remoting command execution. 每个远程命令执行时会回调 rpcHook
+     * @param enableMsgTrace Switch flag instance for message trace. 是否开启消息追踪
      * @param customizedTraceTopic The name value of message trace topic.If you don't config,you can use the default
-     * trace topic name.
+     * trace topic name.  消息追踪 Topic 的名称
      */
-    public DefaultMQProducer(final String producerGroup, RPCHook rpcHook, boolean enableMsgTrace,
-        final String customizedTraceTopic) {
+    public DefaultMQProducer(final String producerGroup,
+                             RPCHook rpcHook,
+                             boolean enableMsgTrace,
+                             final String customizedTraceTopic) {
         this.producerGroup = producerGroup;
         defaultMQProducerImpl = new DefaultMQProducerImpl(this, rpcHook);
         //if client open the message trace feature
@@ -187,10 +259,12 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 使用指定的分组名及自定义的 hook 创建一个生产者
+     * <p>
      * Constructor specifying both producer group and RPC hook.
      *
-     * @param producerGroup Producer group, see the name-sake field.
-     * @param rpcHook RPC hook to execute per each remoting command execution.
+     * @param producerGroup Producer group, see the name-sake field. 生产者分组名称
+     * @param rpcHook RPC hook to execute per each remoting command execution. 每个远程命令执行后回调 rpcHook
      */
     public DefaultMQProducer(final String producerGroup, RPCHook rpcHook) {
         this(null, producerGroup, rpcHook);
@@ -210,6 +284,8 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 使用指定的分组名称创建一个生产者，并设置是否开启消息追踪
+     * <p>
      * Constructor specifying producer group and enabled msg trace flag.
      *
      * @param producerGroup Producer group, see the name-sake field.
@@ -220,6 +296,8 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 使用指定的分组名创建一个生产者，并设置是否开启消息追踪及追踪 Topic 的名称
+     * <p>
      * Constructor specifying producer group, enabled msgTrace flag and customized trace topic name.
      *
      * @param producerGroup Producer group, see the name-sake field.
@@ -264,6 +342,8 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 启动生产者
+     * <p>
      * Start this producer instance. </p>
      *
      * <strong> Much internal initializing procedures are carried out to make this instance prepared, thus, it's a must
@@ -275,7 +355,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     public void start() throws MQClientException {
         // todo 生产者服务分组名
         this.setProducerGroup(withNamespace(this.producerGroup));
-        // todo 生产者服务启动流程启点
+        // todo 调用内部持有的 DefaultMQProducerImpl#start() 方法启动
         this.defaultMQProducerImpl.start();
         if (null != traceDispatcher) {
             try {
@@ -287,6 +367,8 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 关闭当前生产者实例并释放相关资源
+     *
      * This method shuts down this producer instance and releases related resources.
      */
     @Override
@@ -298,6 +380,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 获取 Topic 的消息队列
      * Fetch message queues of topic <code>topic</code>, to which we may send/publish messages.
      *
      * @param topic Topic to fetch.
@@ -310,6 +393,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 同步发送单条消息
      * Send message in synchronous mode. This method returns only when the sending procedure totally completes. </p>
      *
      * <strong>Warn:</strong> this method has internal retry-mechanism, that is, internal implementation will retry
@@ -325,15 +409,16 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * @throws InterruptedException if the sending thread is interrupted.
      */
     @Override
-    public SendResult send(
-        Message msg) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Message msg) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+        // 消息校验
         Validators.checkMessage(msg, this);
         msg.setTopic(withNamespace(msg.getTopic()));
-        // todo 使用的消息生产者是 默认的消息生产者，Topic 为 默认的 TBW102
+        // 发送同步消息，DefaultMQProducer#send(Message) 是对 DefaultMQProducerImpl#send(Message) 的封装
         return this.defaultMQProducerImpl.send(msg);
     }
 
     /**
+     * 同步发送单条消息，并指定发送超时时间
      * Same to {@link #send(Message)} with send timeout specified in addition.
      *
      * @param msg Message to send.
@@ -346,13 +431,13 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * @throws InterruptedException if the sending thread is interrupted.
      */
     @Override
-    public SendResult send(Message msg,
-        long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Message msg, long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         msg.setTopic(withNamespace(msg.getTopic()));
         return this.defaultMQProducerImpl.send(msg, timeout);
     }
 
     /**
+     * 异步发送单条消息，并指定回调方法
      * Send message to broker asynchronously. </p>
      *
      * This method returns immediately. On sending completion, <code>sendCallback</code> will be executed. </p>
@@ -368,13 +453,13 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * @throws InterruptedException if the sending thread is interrupted.
      */
     @Override
-    public void send(Message msg,
-        SendCallback sendCallback) throws MQClientException, RemotingException, InterruptedException {
+    public void send(Message msg, SendCallback sendCallback) throws MQClientException, RemotingException, InterruptedException {
         msg.setTopic(withNamespace(msg.getTopic()));
         this.defaultMQProducerImpl.send(msg, sendCallback);
     }
 
     /**
+     * 异步发送消息，并指定回调方法和发送超时时间
      * Same to {@link #send(Message, SendCallback)} with send timeout specified in addition.
      *
      * @param msg message to send.
@@ -392,6 +477,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 单向发送消息，不等待 Broker 响应
      * Similar to <a href="https://en.wikipedia.org/wiki/User_Datagram_Protocol">UDP</a>, this method won't wait for
      * acknowledgement from broker before return. Obviously, it has maximums throughput yet potentials of message loss.
      *
@@ -407,6 +493,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 向指定的消息队列，同步发送单条消息
      * Same to {@link #send(Message)} with target message queue specified in addition.
      *
      * @param msg Message to send.

@@ -19,12 +19,32 @@ package org.apache.rocketmq.client.producer;
 import com.alibaba.fastjson.JSON;
 import org.apache.rocketmq.common.message.MessageQueue;
 
+/**
+ * 发送消息后，对返回结果封装
+ */
 public class SendResult {
+
+    /**
+     * 发送状态
+     */
     private SendStatus sendStatus;
+
+    /**
+     * 生产者生成的 msgId
+     */
     private String msgId;
     private MessageQueue messageQueue;
+
+    /**
+     * 消息在 MessageQueue 中的逻辑偏移量
+     */
     private long queueOffset;
+
     private String transactionId;
+
+    /**
+     * Broker 端的 OffsetMsgId (包含当前发送的消息所在的 Broker 地址以及在 CommitLog 中的物理偏移量)
+     */
     private String offsetMsgId;
     private String regionId;
     private boolean traceOn = true;

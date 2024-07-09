@@ -26,7 +26,7 @@ import java.util.List;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
 /**
- * 每个主题的路由信息，用一个 TopicToutedData 对象来表示
+ * 每个主题的路由信息，用一个 TopicRoutedData 对象来表示
  */
 public class TopicRouteData extends RemotingSerializable {
 
