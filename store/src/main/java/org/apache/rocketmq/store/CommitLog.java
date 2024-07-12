@@ -2076,7 +2076,6 @@ public class CommitLog {
             // todo 这里应该叫 OffsetMsgId，该 id 包含很多信息
             String msgId;
 
-            // 创建全局唯一的 msgId ，底层存储是由 16 个字节表示
             // 2. 格式：4字节当前 Broker IP + 4字节当前 Broker 端口号 + 8字节消息物理偏移量
             // todo 在 RocketMQ 中，只需要提供 OffsetMsgId 可不必知道该消息所属的 Topic 信息即可查询该条消息的内容
             if ((sysflag & MessageSysFlag.STOREHOSTADDRESS_V6_FLAG) == 0) {

@@ -18,11 +18,41 @@ package org.apache.rocketmq.client.impl.consumer;
 
 import org.apache.rocketmq.common.message.MessageQueue;
 
+/**
+ * 拉取消息请求
+ * todo 说明：
+ *  - 每个 MessageQueue 对应封装成了一个 PullRequest，因为拉取数据是以每个 Broker 下面的 Queue 为单位
+ *  - ProcessQueue 属性，每个 MessageQueue 对应一个 ProcessQueue，保存了这个 MessageQueue 消息处理状态的快照
+ *  - nextOffset 用来标识读取的位置
+ *  - consumerGroup 指定了哪个消费者组要拉取消息
+ *  特别说明
+ *   拉取数据是以每个 Broker下面的 Queue 为单位
+ */
 public class PullRequest {
+
+    /**
+     * 消费者组
+     */
     private String consumerGroup;
+
+    /**
+     * 待拉取消息队列
+     */
     private MessageQueue messageQueue;
+
+    /**
+     * 消息处理队列
+     */
     private ProcessQueue processQueue;
+
+    /**
+     * 待拉取的 MessageQueue 偏移量(逻辑偏移量)
+     */
     private long nextOffset;
+
+    /**
+     * 之前是否被锁定，在拉取消息时，用于保证 PullRequest 的初始拉取点，只在第一次拉取时设置
+     */
     private boolean previouslyLocked = false;
 
     public boolean isPreviouslyLocked() {

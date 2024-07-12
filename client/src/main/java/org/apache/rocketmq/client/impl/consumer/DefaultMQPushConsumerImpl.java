@@ -79,6 +79,10 @@ import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
+/**
+ * todo 重要
+ * 消息消费者内部默认实现类，对外暴漏的是 DefaultMQPushConsumer
+ */
 public class DefaultMQPushConsumerImpl implements MQConsumerInner {
     /**
      * Delay some time when exception occur
@@ -95,19 +99,56 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
     private static final long BROKER_SUSPEND_MAX_TIME_MILLIS = 1000 * 15;
     private static final long CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND = 1000 * 30;
     private final InternalLogger log = ClientLogger.getLog();
+
+    /**
+     * 对外暴漏的消费者对象
+     */
     private final DefaultMQPushConsumer defaultMQPushConsumer;
+
+    /**
+     * 每个 Consumer 的对象都持有一个 RebalanceImpl 实例，每个 RebalanceImpl 实例也只服务于一个 Consumer。
+     * Consumer 负载均衡相关的操作都交给了 RebalanceImpl 对象，均衡消息队列服务，负责分配当前 Consumer 可消费的消息队列(MessageQueue)，当有新的 Consumer 的加入或移除，都会重新分配消息队列
+     */
     private final RebalanceImpl rebalanceImpl = new RebalancePushImpl(this);
     private final ArrayList<FilterMessageHook> filterMessageHookList = new ArrayList<FilterMessageHook>();
     private final long consumerStartTimestamp = System.currentTimeMillis();
     private final ArrayList<ConsumeMessageHook> consumeMessageHookList = new ArrayList<ConsumeMessageHook>();
     private final RPCHook rpcHook;
+
+    /**
+     * 刚启动就是此状态
+     */
     private volatile ServiceState serviceState = ServiceState.CREATE_JUST;
+
+    /**
+     * 客户端实例
+     */
     private MQClientInstance mQClientFactory;
+
+    /**
+     * push 模式的封装，本质上还是使用 pull 模式进行消息消费
+     */
     private PullAPIWrapper pullAPIWrapper;
     private volatile boolean pause = false;
+
+    /**
+     * 默认并发消费
+     */
     private boolean consumeOrderly = false;
+
+    /**
+     * 消息监听器，由业务方创建消费者时传入
+     */
     private MessageListener messageListenerInner;
+
+    /**
+     * 消息消费进度存储
+     */
     private OffsetStore offsetStore;
+
+    /**
+     * 消息消费服务，不断消费消息，并处理消费结果
+     */
     private ConsumeMessageService consumeMessageService;
     private long queueFlowControlTimes = 0;
     private long queueMaxSpanFlowControlTimes = 0;
@@ -210,36 +251,55 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         this.offsetStore = offsetStore;
     }
 
+    /**
+     * 拉取消息过程
+     * 1. 从 Broker 拉取消息，并加入到消息处理队列 ProcessQueue
+     * 2. 将拉取到的消息提交到消息消费服务(ConsumeMessageService)，执行 listener.consumeMessage() 方法消费消息
+     * 3. 消费者进行消息消费，根据业务反馈是否成功消费来推动消费进度，消费成功则更新消费进度，(集群模式下)消息失败但是发送到 Broker ，也会更新消费进度
+     * 注意：消息的消费进度，集群模式下保存在 Broker端，广播模式下保存在消费端(本地客户端)
+     * @param pullRequest
+     */
     public void pullMessage(final PullRequest pullRequest) {
-        // todo 12.2.4 从 pullRequest 中获取要处理的消息队列 processQueue;
+        // todo 12.2.4 从 pullRequest 中获取消息处理队列 processQueue;
         final ProcessQueue processQueue = pullRequest.getProcessQueue();
+
+        // todo 判断消息处理队列是否被废弃，被废弃，直接返回
         if (processQueue.isDropped()) {
             log.info("the pull request[{}] is dropped.", pullRequest.toString());
             return;
         }
 
+        // todo 设置上次拉取消息的时间戳为当前时间戳，根据该值，判断 PullMessageService 是否空闲(没有拉取消息请求要处理，就会阻塞等待)
         pullRequest.getProcessQueue().setLastPullTimestamp(System.currentTimeMillis());
 
+        //
         try {
-            // 判断消费者服务是否正在运行
+            // 判断消费者实例是否正在运行，如果不是，则延迟拉取消息
             this.makeSureStateOK();
         } catch (MQClientException e) {
             log.warn("pullMessage exception, consumer state not ok", e);
-            // 如果消费者服务异常了，等待 3 秒后执行拉取请求
+            // 消费者实例没有在运行，等待 3 秒后执行拉取消息请求
             this.executePullRequestLater(pullRequest, pullTimeDelayMillsWhenException);
             return;
         }
 
+        // 判断 消费者实例 是否暂停
         if (this.isPause()) {
             log.warn("consumer was paused, execute pull request later. instanceName={}, group={}", this.defaultMQPushConsumer.getInstanceName(), this.defaultMQPushConsumer.getConsumerGroup());
-            // 如果消费者服务暂停了，等待 1 秒后执行拉取请求
+            // 如果消费者服务暂停，等待 1 秒后执行拉取请求
             this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_SUSPEND);
             return;
         }
 
+        // 消息处理队列持有的待消费消息总数
         long cachedMessageCount = processQueue.getMsgCount().get();
+        // 消息处理队列持有的待处理消息总大小
         long cachedMessageSizeInMiB = processQueue.getMsgSize().get() / (1024 * 1024);
 
+        /**----------------------------流控：如果消息消费过慢产生消息堆积，会消息消费拉取流控---------------------*/
+
+        // 从数量上进行流控
+        // 如果消息处理队列持有的消息数据超过最大允许值(内存可能要满了)，默认 1000 条，触发流控，延迟 50ms 拉取消息
         if (cachedMessageCount > this.defaultMQPushConsumer.getPullThresholdForQueue()) {
             this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_FLOW_CONTROL);
             if ((queueFlowControlTimes++ % 1000) == 0) {
@@ -250,6 +310,8 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
             return;
         }
 
+        // 从消息大小上进行流控
+        // 如果消息处理队列持有的消息总大小超过最大允许值(内存可能要满了)，默认 100MB ，触发流控，延迟 50ms 拉取消息
         if (cachedMessageSizeInMiB > this.defaultMQPushConsumer.getPullThresholdSizeForQueue()) {
             this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_FLOW_CONTROL);
             if ((queueFlowControlTimes++ % 1000) == 0) {
@@ -260,7 +322,10 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
             return;
         }
 
+        // 并发消息
         if (!this.consumeOrderly) {
+            // todo 已经从 ProcessQueue 对应的 MessageQueue 中拉取的消息的最大消息进度和最小消息进度差值达到 并发消费时-消息处理队列最大跨度(默认 2000) 触发流控，延迟 50ms;
+            //  主要是针对消费进度(逻辑偏移量)小的消息迟迟消费不了的情况，也就是越早发送的消息，越晚被消费，那么就会造成消息堆积，触发流控，延迟 50ms;
             if (processQueue.getMaxSpan() > this.defaultMQPushConsumer.getConsumeConcurrentlyMaxSpan()) {
                 this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_FLOW_CONTROL);
                 if ((queueMaxSpanFlowControlTimes++ % 1000) == 0) {
@@ -271,18 +336,26 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                 }
                 return;
             }
+        // 有序消费
         } else {
+            // todo 消息处理队列必须处于锁定状态(当前消费者持有消息处理队列所在 Broker 上的分布式锁，才能保证消息处理队列的消费顺序)
             if (processQueue.isLocked()) {
+
+                // 在拉取消息时，保证 PullRequest 的初始拉取点，只在第一次拉取时设置
                 if (!pullRequest.isPreviouslyLocked()) {
                     long offset = -1L;
                     try {
+                        // 计算消息队列开始的消费进度
                         offset = this.rebalanceImpl.computePullFromWhereWithException(pullRequest.getMessageQueue());
                     } catch (MQClientException e) {
                         this.executePullRequestLater(pullRequest, pullTimeDelayMillsWhenException);
                         log.error("Failed to compute pull offset, pullResult: {}", pullRequest, e);
                         return;
                     }
+
+                    // 如果获取的 Offset(逻辑偏移量) 小于拉取消息请求的 Offset(逻辑偏移量)，说明要拉取消息请求的进度有问题，需要修正拉取消息请求的逻辑偏移量
                     boolean brokerBusy = offset < pullRequest.getNextOffset();
+                    // 默认消费方式 CONSUME_FROM_LAST_OFFSET(从上次偏移量开始消费)
                     log.info("the first time to pull message, so fix offset from broker. pullRequest: {} NewOffset: {} brokerBusy: {}",
                         pullRequest, offset, brokerBusy);
                     if (brokerBusy) {
@@ -290,9 +363,14 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                             pullRequest, offset);
                     }
 
+                    // 保证 PullRequest 的初始拉取点在拉取时，只在第一次拉取时设置
                     pullRequest.setPreviouslyLocked(true);
+
+                    // 修正消息拉取点
                     pullRequest.setNextOffset(offset);
                 }
+
+              // 消息处理队列，没有被锁定，延迟拉取消息 3000ms
             } else {
                 this.executePullRequestLater(pullRequest, pullTimeDelayMillsWhenException);
                 log.info("pull message later because not locked in broker, {}", pullRequest);
@@ -300,6 +378,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
             }
         }
 
+        // todo 获取 Topic 对应的订阅信息，若不存在，则延迟 3000ms 拉取消息
         final SubscriptionData subscriptionData = this.rebalanceImpl.getSubscriptionInner().get(pullRequest.getMessageQueue().getTopic());
         if (null == subscriptionData) {
             this.executePullRequestLater(pullRequest, pullTimeDelayMillsWhenException);
@@ -1170,10 +1249,17 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         return queueTimeSpan;
     }
 
+    /**
+     * 处理重试消息，还原对应的 Topic
+     * @param msgs
+     * @param consumerGroup
+     */
     public void resetRetryAndNamespace(final List<MessageExt> msgs, String consumerGroup) {
+        // 重试 topic , %RETRY% + consumerGroup
         final String groupTopic = MixAll.getRetryTopic(consumerGroup);
         for (MessageExt msg : msgs) {
             String retryTopic = msg.getProperty(MessageConst.PROPERTY_RETRY_TOPIC);
+            // 如果是重试队列，则还原真实的 Topic
             if (retryTopic != null && groupTopic.equals(msg.getTopic())) {
                 msg.setTopic(retryTopic);
             }

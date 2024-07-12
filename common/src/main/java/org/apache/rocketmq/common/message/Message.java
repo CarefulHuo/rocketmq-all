@@ -22,13 +22,35 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 消息
+ */
 public class Message implements Serializable {
     private static final long serialVersionUID = 8445773977080406428L;
 
+    /**
+     * 必填，消息所属的 Topic 的名称
+     */
     private String topic;
+
+    /**
+     * 选填，完全由应用设置，RocketMQ 不做干预
+     */
     private int flag;
+
+    /**
+     * 保存 Tags、keys、delevelLevel，以及主题和队列Id替换 等属性都存在这个 Map 中
+     */
     private Map<String, String> properties;
+
+    /**
+     * 必填，消息体
+     */
     private byte[] body;
+
+    /**
+     * 如果是事务消息，必填，事务Id
+     */
     private String transactionId;
 
     public Message() {
@@ -118,6 +140,10 @@ public class Message implements Serializable {
         return this.getProperty(MessageConst.PROPERTY_TAGS);
     }
 
+    /**
+     * Tags 属性
+     * @param tags
+     */
     public void setTags(String tags) {
         this.putProperty(MessageConst.PROPERTY_TAGS, tags);
     }
@@ -136,7 +162,12 @@ public class Message implements Serializable {
         this.setKeys(sb.toString().trim());
     }
 
+    /**
+     * 获取延迟登记
+     * @return
+     */
     public int getDelayTimeLevel() {
+        // 从 properties 中获取 key值为DELAY 的属性值，即延迟等级
         String t = this.getProperty(MessageConst.PROPERTY_DELAY_TIME_LEVEL);
         if (t != null) {
             return Integer.parseInt(t);
@@ -145,10 +176,21 @@ public class Message implements Serializable {
         return 0;
     }
 
+    /**
+     * 设置延迟等级
+     * @param level
+     */
     public void setDelayTimeLevel(int level) {
         this.putProperty(MessageConst.PROPERTY_DELAY_TIME_LEVEL, String.valueOf(level));
     }
 
+    /**
+     * 消息发送时是否等待消息存储完成后在返回
+     * - 开启同步落盘，同步等待
+     * - 消息写入，主从复制，同步等待从节点写入
+     * 默认是 true
+     * @return
+     */
     public boolean isWaitStoreMsgOK() {
         String result = this.getProperty(MessageConst.PROPERTY_WAIT_STORE_MSG_OK);
         if (null == result)

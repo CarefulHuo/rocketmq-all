@@ -376,6 +376,7 @@ public class MessageDecoder {
 
             int msgIDLength = storehostIPLength + 4 + 8;
             ByteBuffer byteBufferMsgId = ByteBuffer.allocate(msgIDLength);
+            // todo 生成 OffsetMsgId：Broker地址 + 当前消息在 CommitLog 的物理偏移量
             String msgId = createMessageId(byteBufferMsgId, msgExt.getStoreHostBytes(), msgExt.getCommitLogOffset());
             msgExt.setMsgId(msgId);
 

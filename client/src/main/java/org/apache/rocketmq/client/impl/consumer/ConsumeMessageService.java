@@ -17,10 +17,19 @@
 package org.apache.rocketmq.client.impl.consumer;
 
 import java.util.List;
+
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.protocol.body.ConsumeMessageDirectlyResult;
 
+/**
+ * 消息消费处理服务，消费者会根据不同的消费类型(消息监听器-在启动时创建)，用来消费从 Broker 上拉取的消息
+ * <p>
+ * 消息消费逻辑(非顺序消息) 不断消费消息，并处理消费结果
+ * 1. 将待消费的消息存入 ProcessQueue 中，并执行消息消费之前的钩子函数
+ * 2. 修改待消费消息的主题(设置为消费组的重试主题)
+ * 3. 分页消费
+ */
 public interface ConsumeMessageService {
     void start();
 
@@ -36,9 +45,16 @@ public interface ConsumeMessageService {
 
     ConsumeMessageDirectlyResult consumeMessageDirectly(final MessageExt msg, final String brokerName);
 
-    void submitConsumeRequest(
-        final List<MessageExt> msgs,
-        final ProcessQueue processQueue,
-        final MessageQueue messageQueue,
-        final boolean dispathToConsume);
+    /**
+     * 提交消息消费请求到线程池
+     *
+     * @param msgs             从 Broker 拉取的消息 (Broker 是从 MessageStore 存储服务)
+     * @param processQueue     消息处理队列
+     * @param messageQueue     消息队列
+     * @param dispathToConsume 派发给消费者消费
+     */
+    void submitConsumeRequest(final List<MessageExt> msgs,
+                              final ProcessQueue processQueue,
+                              final MessageQueue messageQueue,
+                              final boolean dispathToConsume);
 }

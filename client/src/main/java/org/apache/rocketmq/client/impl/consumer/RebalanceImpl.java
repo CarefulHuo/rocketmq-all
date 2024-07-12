@@ -41,16 +41,59 @@ import org.apache.rocketmq.common.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 均衡消息队列服务，负责分配当前消费组下的 Consumer 可消费的消息队列(MessageQueue)
+ * todo 特别说明
+ *  1. 该实例中的 Topic 的队列信息是动态的，随着 Consumer 的变化而变化，数据是全量的，因为要为每个 Consumer 分配队列
+ *  2. 每个 Consumer 都持有该实例，用于给当前的 Consumer 分配队列
+ */
 public abstract class RebalanceImpl {
     protected static final InternalLogger log = ClientLogger.getLog();
+
+    /**
+     * 消息队列 到 消息处理队列 的映射
+     */
     protected final ConcurrentMap<MessageQueue, ProcessQueue> processQueueTable = new ConcurrentHashMap<MessageQueue, ProcessQueue>(64);
-    protected final ConcurrentMap<String/* topic */, Set<MessageQueue>> topicSubscribeInfoTable =
-        new ConcurrentHashMap<String, Set<MessageQueue>>();
-    protected final ConcurrentMap<String /* topic */, SubscriptionData> subscriptionInner =
-        new ConcurrentHashMap<String, SubscriptionData>();
+
+    /**
+     * 订阅 Topic 下的消息队列
+     * 1. 从 NameSrv 更新路由配置到本地，设置该属性的情况如下(todo 注意：起始的时候是全部的消息队列，主要作为分配消息队列的数据源)
+     * 2. 包括重试主题对应的队列信息，默认情况下，重试主题只有一个队列，具体的重试主题的队列信息分布在哪个 Broker 上，要看重试消息发送到哪个 Broker 上，和消息的消费队列有关‘
+     *
+     * @see MQClientInstance#updateTopicRouteInfoFromNameServer(java.lang.String, boolean, org.apache.rocketmq.client.producer.DefaultMQProducer)
+     */
+    protected final ConcurrentMap<String/* topic */, Set<MessageQueue>> topicSubscribeInfoTable = new ConcurrentHashMap<String, Set<MessageQueue>>();
+
+    /**
+     * topic 的订阅数据信息
+     * todo 注意：每个 Topic 都对应一个重试的 Topic，也就是 消费者在订阅时，会自动订阅 Topic 对应的重试主题
+     *
+     * @see DefaultMQPushConsumerImpl#copySubscription()
+     */
+    protected final ConcurrentMap<String /* topic */, SubscriptionData> subscriptionInner = new ConcurrentHashMap<String, SubscriptionData>();
+
+    /**
+     * 消费者组
+     * todo 疑惑 根据消费组做负载，1) 获取消费组下的消费者们 2) 对于顺序消费，在 Broker 上的分布式的一个隔离标志
+     */
     protected String consumerGroup;
+
+    /**
+     * 消费模式
+     * 1. CLUSTERING: 集群模式，
+     * 2. BROADCASTING: 广播模式
+     */
     protected MessageModel messageModel;
+
+    /**
+     * 分配消息队列的策略，默认平均分配策略
+     * todo  负载算法的具体实现，究竟如何分配就是由这个 AllocateMessageQueueStrategy 决定的
+     */
     protected AllocateMessageQueueStrategy allocateMessageQueueStrategy;
+
+    /**
+     * 消息客户端实例
+     */
     protected MQClientInstance mQClientFactory;
 
     public RebalanceImpl(String consumerGroup, MessageModel messageModel,
@@ -131,15 +174,26 @@ public abstract class RebalanceImpl {
         return result;
     }
 
+    /**
+     * 对指定的消息队列 MessageQueue 加锁
+     * 说明：
+     * 1. 请求 Broker 获取指定消息队列的分布式锁，即锁定指定的消息队列
+     * 2. Broker 消息队列的锁会过期，默认配置 30s，因此 Consumer 端需要不断向 Broker 刷新该锁过期时间，默认配置 20s 刷新一次
+     *
+     * @param mq  消息队列
+     * @return  是否加锁成功
+     */
     public boolean lock(final MessageQueue mq) {
         FindBrokerResult findBrokerResult = this.mQClientFactory.findBrokerAddressInSubscribe(mq.getBrokerName(), MixAll.MASTER_ID, true);
         if (findBrokerResult != null) {
             LockBatchRequestBody requestBody = new LockBatchRequestBody();
+            // 以消费组进行隔离
             requestBody.setConsumerGroup(this.consumerGroup);
             requestBody.setClientId(this.mQClientFactory.getClientId());
             requestBody.getMqSet().add(mq);
 
             try {
+                // 向 Broker 发起加锁 MessageQueue 请求
                 Set<MessageQueue> lockedMq =
                     this.mQClientFactory.getMQClientAPIImpl().lockBatchMQ(findBrokerResult.getBrokerAddr(), requestBody, 1000);
                 for (MessageQueue mmqq : lockedMq) {
@@ -164,6 +218,9 @@ public abstract class RebalanceImpl {
         return false;
     }
 
+    /**
+     *
+     */
     public void lockAll() {
         HashMap<String, Set<MessageQueue>> brokerMqs = this.buildProcessQueueTableByBrokerName();
 
