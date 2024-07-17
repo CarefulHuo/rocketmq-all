@@ -86,7 +86,7 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /**
  * 1. RocketMQ 客户端中的顶层类，大多数情况下，可以简单理解为每个客户端对应一个 MQClientInstance 实例
- * 2. 消息客户端实例，封装对 NameSrv Broker 的 API 调用，提供给 Producer、Consumer 使用
+ * 2. 消息客户端实例，封装对 NameSrv、Broker 的 API 调用，提供给 Producer、Consumer 使用
  */
 public class MQClientInstance {
     private final static long LOCK_TIMEOUT_MILLIS = 3000;
@@ -221,6 +221,7 @@ public class MQClientInstance {
         this.instanceIndex = instanceIndex;
 
         /**---------- 封装网络 API start---------*/
+
         // netty客户端配置
         this.nettyClientConfig = new NettyClientConfig();
         // netty客户端配置-设置客户端回调执行线程数
@@ -489,7 +490,7 @@ public class MQClientInstance {
             }
         }, 1000, this.clientConfig.getHeartbeatBrokerInterval(), TimeUnit.MILLISECONDS);
 
-        // todo 默认消费端启动 10s hou , 每隔 5s 持久化一次所有消费队列的偏移量(广播消费保存到本地，集群消费保存到 Broker上)
+        // todo 默认消费端启动 10s 后 , 每隔 5s 持久化一次所有消费队列的偏移量(广播消费保存到本地，集群消费保存到 Broker上)
         // todo Broker 也会使用后台线程定时将消费进度写入文件或者写入本地文件，这对应使用的两种消费进度过滤
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
@@ -679,10 +680,16 @@ public class MQClientInstance {
         }
     }
 
+    /**
+     * 发送心跳到所有的 Broker
+     */
     public void sendHeartbeatToAllBrokerWithLock() {
         if (this.lockHeartbeat.tryLock()) {
             try {
+                // 发送心跳到所有的 Broker
                 this.sendHeartbeatToAllBroker();
+
+                // 上报 classFilter 过滤信息到 Broker
                 this.uploadFilterClassSource();
             } catch (final Exception e) {
                 log.error("sendHeartbeatToAllBroker exception", e);
@@ -748,8 +755,13 @@ public class MQClientInstance {
         return false;
     }
 
+    /**
+     * 发送心跳到所有的 Broker
+     */
     private void sendHeartbeatToAllBroker() {
+        // 准备向 Broker 发送的心跳包
         final HeartbeatData heartbeatData = this.prepareHeartbeatData();
+
         final boolean producerEmpty = heartbeatData.getProducerDataSet().isEmpty();
         final boolean consumerEmpty = heartbeatData.getConsumerDataSet().isEmpty();
         if (producerEmpty && consumerEmpty) {
@@ -757,6 +769,7 @@ public class MQClientInstance {
             return;
         }
 
+        // 向所有的 Broker 发送心跳包
         if (!this.brokerAddrTable.isEmpty()) {
             long times = this.sendHeartbeatTimesTotal.getAndIncrement();
             Iterator<Entry<String, HashMap<Long, String>>> it = this.brokerAddrTable.entrySet().iterator();
@@ -769,6 +782,7 @@ public class MQClientInstance {
                         Long id = entry1.getKey();
                         String addr = entry1.getValue();
                         if (addr != null) {
+                            // 如果消费者信息不存在 && Broker 不是主节点，则结束本次循环
                             if (consumerEmpty) {
                                 if (id != MixAll.MASTER_ID)
                                     continue;

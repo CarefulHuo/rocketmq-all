@@ -57,21 +57,40 @@ import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /**
- * 客户端远程处理器
+ * 客户端远程处理器，主要针对 Broker 端发来的请求，进行处理
  */
 public class ClientRemotingProcessor extends AsyncNettyRequestProcessor implements NettyRequestProcessor {
     private final InternalLogger log = ClientLogger.getLog();
+
+    /**
+     * 客户端实例
+     */
     private final MQClientInstance mqClientFactory;
 
+    /**
+     * 创建远程通信客户端
+     *
+     * @param mqClientFactory
+     */
     public ClientRemotingProcessor(final MQClientInstance mqClientFactory) {
         this.mqClientFactory = mqClientFactory;
     }
 
+    /**
+     * 处理 Broker 端发来的请求
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     @Override
     public RemotingCommand processRequest(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
+
+        // 根据请求码，进行不同的处理逻辑
         switch (request.getCode()) {
             case RequestCode.CHECK_TRANSACTION_STATE:
+                // 本地事务状态回查
                 return this.checkTransactionState(ctx, request);
             case RequestCode.NOTIFY_CONSUMER_IDS_CHANGED:
                 return this.notifyConsumerIdsChanged(ctx, request);
@@ -99,11 +118,23 @@ public class ClientRemotingProcessor extends AsyncNettyRequestProcessor implemen
         return false;
     }
 
+    /**
+     * 客户端(生产者)检查本地事务状态
+     *
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     public RemotingCommand checkTransactionState(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
+
+        // 解码请求
         final CheckTransactionStateRequestHeader requestHeader =
             (CheckTransactionStateRequestHeader) request.decodeCommandCustomHeader(CheckTransactionStateRequestHeader.class);
         final ByteBuffer byteBuffer = ByteBuffer.wrap(request.getBody());
+
+        // 半消息
         final MessageExt messageExt = MessageDecoder.decode(byteBuffer);
         if (messageExt != null) {
             if (StringUtils.isNotEmpty(this.mqClientFactory.getClientConfig().getNamespace())) {
@@ -114,11 +145,16 @@ public class ClientRemotingProcessor extends AsyncNettyRequestProcessor implemen
             if (null != transactionId && !"".equals(transactionId)) {
                 messageExt.setTransactionId(transactionId);
             }
+            // todo 从半消息中获取生产者组
             final String group = messageExt.getProperty(MessageConst.PROPERTY_PRODUCER_GROUP);
             if (group != null) {
+                // todo 获取生产者组下的一个生产者
                 MQProducerInner producer = this.mqClientFactory.selectProducer(group);
                 if (producer != null) {
+                    // todo 获取远端地址，这里是 Broker 地址，因为是 Broker 向生产者发送的请求
                     final String addr = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
+
+                    // todo 生产者检查本地事务状态
                     producer.checkTransactionState(addr, messageExt, requestHeader);
                 } else {
                     log.debug("checkTransactionState, pick producer by group[{}] failed", group);

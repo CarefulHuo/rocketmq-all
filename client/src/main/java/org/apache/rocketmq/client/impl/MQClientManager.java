@@ -25,12 +25,18 @@ import org.apache.rocketmq.client.log.ClientLogger;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.remoting.RPCHook;
 
+/**
+ * 客户端管理对象，整个 JVM 实例中只存在一个该对象
+ */
 public class MQClientManager {
     private final static InternalLogger log = ClientLogger.getLog();
     private static MQClientManager instance = new MQClientManager();
     private AtomicInteger factoryIndexGenerator = new AtomicInteger();
-    private ConcurrentMap<String/* clientId */, MQClientInstance> factoryTable =
-        new ConcurrentHashMap<String, MQClientInstance>();
+
+    /**
+     * 客户端实例缓存映射表，同一个 ClientId，只会创建一个 MQClientInstance 实例
+     */
+    private ConcurrentMap<String/* clientId */, MQClientInstance> factoryTable = new ConcurrentHashMap<String, MQClientInstance>();
 
     private MQClientManager() {
 
@@ -45,7 +51,8 @@ public class MQClientManager {
     }
 
     /**
-     * 获取或创建 MQClientInstance 维护在一个 ConcurrentMap<clientId,MQClientInstance> 里面
+     * 获取或创建 MQClientInstance(客户端实例)
+     * 维护在一个 ConcurrentMap<clientId,MQClientInstance> 里面
      * @param clientConfig
      * @param rpcHook
      * @return
@@ -53,6 +60,8 @@ public class MQClientManager {
     public MQClientInstance getOrCreateMQClientInstance(final ClientConfig clientConfig, RPCHook rpcHook) {
         // 获取 clientId: 客户端IP@客户端实例名称@单位名称(为空则不拼接)
         String clientId = clientConfig.buildMQClientId();
+
+        // 从本地缓存中获取 MQClientInstance
         MQClientInstance instance = this.factoryTable.get(clientId);
         if (null == instance) {
             // 构造 MQClientInstance

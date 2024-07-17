@@ -513,6 +513,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 向指定的消息队列同步单条发送消息，并指定超时时间
      * Same to {@link #send(Message)} with target message queue and send timeout specified.
      *
      * @param msg Message to send.
@@ -533,6 +534,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 向指定的消息队列，异步发送单条消息，并指定回调方法
      * Same to {@link #send(Message, SendCallback)} with target message queue specified.
      *
      * @param msg Message to send.
@@ -550,6 +552,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 向指定的消息队列，异步单条发送消息，并指定回调方法和超时时间
      * Same to {@link #send(Message, SendCallback)} with target message queue and send timeout specified.
      *
      * @param msg Message to send.
@@ -568,6 +571,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 单向发送消息到指定队列，不等待 Broker 响应
      * Same to {@link #sendOneway(Message)} with target message queue specified.
      *
      * @param msg Message to send.
@@ -577,13 +581,13 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * @throws InterruptedException if the sending thread is interrupted.
      */
     @Override
-    public void sendOneway(Message msg,
-        MessageQueue mq) throws MQClientException, RemotingException, InterruptedException {
+    public void sendOneway(Message msg, MessageQueue mq) throws MQClientException, RemotingException, InterruptedException {
         msg.setTopic(withNamespace(msg.getTopic()));
         this.defaultMQProducerImpl.sendOneway(msg, queueWithNamespace(mq));
     }
 
     /**
+     * 向消息队列同步发送单条消息，并指定发送队列选择器
      * Same to {@link #send(Message)} with message queue selector specified.
      *
      * @param msg Message to send.
@@ -604,6 +608,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     *  向消息队列同步发送单条消息，并指定发送队列选择器、超时时间
      * Same to {@link #send(Message, MessageQueueSelector, Object)} with send timeout specified.
      *
      * @param msg Message to send.
@@ -625,6 +630,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 向指定的消息队列异步发送单条消息，并指定回调方法、发送队列选择器
      * Same to {@link #send(Message, SendCallback)} with message queue selector specified.
      *
      * @param msg Message to send.
@@ -643,6 +649,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 向指定的消息队列异步发送单条消息，并指定回调方法、发送队列选择器、超时时间
      * Same to {@link #send(Message, MessageQueueSelector, Object, SendCallback)} with timeout specified.
      *
      * @param msg Message to send.
@@ -666,7 +673,8 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      *
      * <strong>Warn:</strong> this method has internal retry-mechanism, that is, internal implementation will retry
      * {@link #retryTimesWhenSendFailed} times before claiming failure. As a result, multiple messages may potentially
-     * delivered to broker(s). It's up to the application developers to resolve potential duplication issue.
+     * delivered to broker(s). It's up to the application
+     * to resolve potential duplication issue.
      *
      * @param msg request message to send
      * @param timeout request timeout
@@ -789,6 +797,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 单向发送消息到队列选择器选中的队列，不等待 Broker 响应
      * Same to {@link #sendOneway(Message)} with message queue selector specified.
      *
      * @param msg Message to send.
@@ -836,11 +845,12 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 在 Broker 上创建指定的 Topic
      * This method will be removed in a certain version after April 5, 2020, so please do not use this method.
      *
-     * @param key accesskey
-     * @param newTopic topic name
-     * @param queueNum topic's queue number
+     * @param key      accesskey  访问密钥
+     * @param newTopic topic name  新建 Topic 的名称
+     * @param queueNum topic's queue number  Topic 的队列数量
      * @throws MQClientException if there is any client error.
      */
     @Deprecated
@@ -850,13 +860,14 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 在 Broker 上创建指定的 Topic
      * Create a topic on broker. This method will be removed in a certain version after April 5, 2020, so please do not
      * use this method.
      *
      * @param key accesskey
      * @param newTopic topic name
      * @param queueNum topic's queue number
-     * @param topicSysFlag topic system flag
+     * @param topicSysFlag topic system flag 保留字段，暂未使用
      * @throws MQClientException if there is any client error.
      */
     @Deprecated
@@ -866,6 +877,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 查找指定时间的消息队列的物理 Offset
      * Search consume queue offset of the given time stamp.
      *
      * @param mq Instance of MessageQueue
@@ -879,6 +891,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 查询给定消息队列的最大 Offset
      * Query maximum offset of the given message queue.
      *
      * This method will be removed in a certain version after April 5, 2020, so please do not use this method.
@@ -894,6 +907,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 查询给定消息队列的最小 Offset
      * Query minimum offset of the given message queue.
      *
      * This method will be removed in a certain version after April 5, 2020, so please do not use this method.
@@ -909,6 +923,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 查询最早的消息存储时间
      * Query earliest message store time.
      *
      * This method will be removed in a certain version after April 5, 2020, so please do not use this method.
@@ -924,6 +939,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 根据给定的 msgId 查询消息
      * Query message of the given offset message ID.
      *
      * This method will be removed in a certain version after April 5, 2020, so please do not use this method.
@@ -943,6 +959,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     /**
+     * 根据关键字查询消息
      * Query message by key.
      *
      * This method will be removed in a certain version after April 5, 2020, so please do not use this method.

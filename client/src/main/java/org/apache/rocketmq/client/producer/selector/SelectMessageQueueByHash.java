@@ -21,10 +21,14 @@ import org.apache.rocketmq.client.producer.MessageQueueSelector;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageQueue;
 
+/**
+ * 基于参数 Hash 选择队列
+ */
 public class SelectMessageQueueByHash implements MessageQueueSelector {
 
     @Override
     public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
+        // 根据参数的 HashCode 的值，基于消息队列长度取模
         int value = arg.hashCode() % mqs.size();
         if (value < 0) {
             value = Math.abs(value);

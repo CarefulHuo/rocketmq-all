@@ -52,9 +52,18 @@ public class RebalancePullImpl extends RebalanceImpl {
         }
     }
 
+    /**
+     * 移除不需要的消息队列相关信息，并返回移除成功
+     *
+     * @param mq
+     * @param pq
+     * @return
+     */
     @Override
     public boolean removeUnnecessaryMessageQueue(MessageQueue mq, ProcessQueue pq) {
+        // 持久化 MessageQueue 的消费进度
         this.defaultMQPullConsumerImpl.getOffsetStore().persist(mq);
+        // 删除 OffsetTable 中 MessageQueue 的消费进度
         this.defaultMQPullConsumerImpl.getOffsetStore().removeOffset(mq);
         return true;
     }

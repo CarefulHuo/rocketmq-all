@@ -17,9 +17,22 @@
 package org.apache.rocketmq.client.producer;
 
 import java.util.List;
+
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageQueue;
 
+/**
+ * 消息队列选择器接口，消息发送的负载均衡算法
+ */
 public interface MessageQueueSelector {
+
+    /**
+     * 选择消息队列
+     *
+     * @param mqs 消息队列
+     * @param msg 消息
+     * @param arg 参数
+     * @return 消息队列
+     */
     MessageQueue select(final List<MessageQueue> mqs, final Message msg, final Object arg);
 }

@@ -16,6 +16,10 @@
  */
 package org.apache.rocketmq.client.producer;
 
+/**
+ * 事务消息发送结果
+ * 特别说明：是通过继承 SendResult 类来实现的，其实就多了一个 本地事务状态的属性
+ */
 public class TransactionSendResult extends SendResult {
     private LocalTransactionState localTransactionState;
 

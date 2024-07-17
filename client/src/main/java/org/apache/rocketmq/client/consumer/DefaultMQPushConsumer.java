@@ -65,11 +65,13 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private final InternalLogger log = ClientLogger.getLog();
 
     /**
+     * 持有 DefaultMQPushConsumerImpl 引用，这个是内部实现类
      * Internal implementation. Most of the functions herein are delegated to it.
      */
     protected final transient DefaultMQPushConsumerImpl defaultMQPushConsumerImpl;
 
     /**
+     * 消费组
      * Consumers of the same role is required to have exactly same subscriptions and consumerGroup to correctly achieve
      * load balance. It's required and needs to be globally unique.
      * </p>
@@ -79,6 +81,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private String consumerGroup;
 
     /**
+     * 消费模式，默认集群消费
      * Message model defines the way how messages are delivered to each consumer clients.
      * </p>
      *
@@ -93,6 +96,8 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private MessageModel messageModel = MessageModel.CLUSTERING;
 
     /**
+     * 消费点，即指定消费开始偏移量(最大逻辑偏移量，最小逻辑偏移量，指定时间戳)
+     * todo 消费点，默认为消息队列尾部，即跳过历史消息
      * Consuming point on consumer booting.
      * </p>
      *
@@ -130,56 +135,71 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
      * 20131223171201<br>
      * Implying Seventeen twelve and 01 seconds on December 23, 2013 year<br>
      * Default backtracking consumption time Half an hour ago.
+     * 默认回溯消费时间：半小时前。
      */
     private String consumeTimestamp = UtilAll.timeMillisToHumanString3(System.currentTimeMillis() - (1000 * 60 * 30));
 
     /**
+     * 集群模式下的消息队列分配策略，指定如何将消息队列分配给每个消费者
+     * 广播模式下不需要消息分配策略，因为每个消费者都会消费全部消息
      * Queue allocation algorithm specifying how message queues are allocated to each consumer clients.
      */
     private AllocateMessageQueueStrategy allocateMessageQueueStrategy;
 
     /**
      * Subscription relationship
+     * 订阅关系
+     * key:topic
+     * value:订阅表达式 如 * 表示订阅所有
      */
     private Map<String /* topic */, String /* sub expression */> subscription = new HashMap<String, String>();
 
     /**
+     * 消息业务监听器
      * Message listener
      */
     private MessageListener messageListener;
 
     /**
+     * 消息消费进度存储器
      * Offset Storage
      */
     private OffsetStore offsetStore;
 
     /**
+     * 消费者最小线程数量
      * Minimum consumer thread number
      */
     private int consumeThreadMin = 20;
 
     /**
+     * 消费者最大线程数量
      * Max consumer thread number
      */
     private int consumeThreadMax = 20;
 
     /**
+     * 线程池动态调整的阈值
      * Threshold for dynamic adjustment of the number of thread pool
      */
     private long adjustThreadPoolNumsThreshold = 100000;
 
     /**
+     * 并发消费，消息队列中消息的最大跨度，用于流控
+     * 有序消费，不受该值影响
      * Concurrently max span offset.it has no effect on sequential consumption
      */
     private int consumeConcurrentlyMaxSpan = 2000;
 
     /**
+     * 消息队列中最多存储 1000 条消息，用于流控
      * Flow control threshold on queue level, each message queue will cache at most 1000 messages by default,
      * Consider the {@code pullBatchSize}, the instantaneous value may exceed the limit
      */
     private int pullThresholdForQueue = 1000;
 
     /**
+     * 消息队列中最多存储的消息大小是 100mb，用于流控
      * Limit the cached message size on queue level, each message queue will cache at most 100 MiB messages by default,
      * Consider the {@code pullBatchSize}, the instantaneous value may exceed the limit
      *
@@ -189,6 +209,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private int pullThresholdSizeForQueue = 100;
 
     /**
+     * 主题级别的消息队列拉取数量，用于流控，-1 表示无限制，比如：设置了该值为 1000，并且为当前消费者分配了 10 个消息队列，那么 pullThresholdForQueue 为 100
      * Flow control threshold on topic level, default value is -1(Unlimited)
      * <p>
      * The value of {@code pullThresholdForQueue} will be overwrote and calculated based on
@@ -200,6 +221,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private int pullThresholdForTopic = -1;
 
     /**
+     * 主题级别的消息队列消息大小存储限制，用于流控，-1 表示无限制，比如：设置了该值为 1000，并且为当前消费者分配了 10 个消息队列，那么 pullThresholdSizeForQueue 为 100
      * Limit the cached message size on topic level, default value is -1 MiB(Unlimited)
      * <p>
      * The value of {@code pullThresholdSizeForQueue} will be overwrote and calculated based on
@@ -211,21 +233,27 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private int pullThresholdSizeForTopic = -1;
 
     /**
+     * todo Pull(拉模式)下的消息拉取间隔，可以针对消费方消费负担过大的情况进行缓解
      * Message pull Interval
      */
     private long pullInterval = 0;
 
     /**
+     * 批量方式消费，可以很大程度上提高消费吞吐量
+     * 决定了每次传入 MessageListener#consumerMessage 中的消息数量
+     *
      * Batch consumption size
      */
     private int consumeMessageBatchMaxSize = 1;
 
     /**
+     * 拉模式下每次最多拉取消息的条数，默认 32 条
      * Batch pull size
      */
     private int pullBatchSize = 32;
 
     /**
+     * 是否在每次拉取时更新订阅关系
      * Whether update subscription relationship when every pull
      */
     private boolean postSubscriptionWhenPull = false;
@@ -236,6 +264,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private boolean unitMode = false;
 
     /**
+     * 消息重试次数
      * Max re-consume times. -1 means 16 times.
      * </p>
      *
@@ -250,6 +279,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     private long suspendCurrentQueueTimeMillis = 1000;
 
     /**
+     * 消息消费超时时间，单位:分钟
      * Maximum amount of time in minutes a message may block the consuming thread.
      */
     private long consumeTimeout = 15;
@@ -264,7 +294,10 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
      */
     private TraceDispatcher traceDispatcher = null;
 
+    /*-------------------------------------- 构造方法 --------------------------------*/
+
     /**
+     * 默认构造方法，消费组名默认为 DEFAULT_CONSUMER_GROUP，默认消息队列分配策略为 平均分配策略
      * Default constructor.
      */
     public DefaultMQPushConsumer() {
@@ -272,6 +305,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     }
 
     /**
+     * 设定消费者组名称，默认消息队列分配策略为 平均分配策略
      * Constructor specifying consumer group.
      *
      * @param consumerGroup Consumer group.

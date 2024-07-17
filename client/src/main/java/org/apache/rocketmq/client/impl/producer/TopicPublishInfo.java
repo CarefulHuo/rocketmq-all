@@ -41,7 +41,7 @@ public class TopicPublishInfo {
     private boolean haveTopicRouterInfo = false;
 
     /**
-     * Topic的队列集合
+     * Topic的写队列集合
      * todo 注意：是某个 Topic 在所有 Broker 主节点上分布的队列。如有 Broker A 和 Broker B，写队列 4 个，那么这里就有 8 个队列
      */
     private List<MessageQueue> messageQueueList = new ArrayList<MessageQueue>();

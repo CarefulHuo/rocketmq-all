@@ -22,14 +22,40 @@ import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.protocol.NamespaceUtil;
 import org.apache.rocketmq.remoting.RPCHook;
 
+/**
+ * 本地应用发送事务消息的核心类
+ * todo 特别说明：该类通过继承 DefaultMQProducer 来复用大部分发送消息相关逻辑
+ */
 public class TransactionMQProducer extends DefaultMQProducer {
+
+    /**
+     * 事务检查监听器，已经被 TransactionListener 代替
+     */
     private TransactionCheckListener transactionCheckListener;
+
+    /**
+     * 最小线程数
+     */
     private int checkThreadPoolMinSize = 1;
+
+    /**
+     * 最大线程数
+     */
     private int checkThreadPoolMaxSize = 1;
+
+    /**
+     * 任务等待队列大小
+     */
     private int checkRequestHoldMax = 2000;
 
+    /**
+     * 事务状态回查线程池
+     */
     private ExecutorService executorService;
 
+    /**
+     * 事务监听器，实现本地事务执行，本地事务状态回查
+     */
     private TransactionListener transactionListener;
 
     public TransactionMQProducer() {
@@ -57,6 +83,7 @@ public class TransactionMQProducer extends DefaultMQProducer {
 
     @Override
     public void start() throws MQClientException {
+        // todo 启动时，比普通消息多了个初始化事务环境的方法，其实就是创建事务状态回查线程池
         this.defaultMQProducerImpl.initTransactionEnv();
         super.start();
     }
@@ -64,6 +91,7 @@ public class TransactionMQProducer extends DefaultMQProducer {
     @Override
     public void shutdown() {
         super.shutdown();
+        // todo 关闭时，同样需要关闭事务环境，其实就是关闭事务状态回查线程池
         this.defaultMQProducerImpl.destroyTransactionEnv();
     }
 
@@ -73,8 +101,8 @@ public class TransactionMQProducer extends DefaultMQProducer {
      */
     @Override
     @Deprecated
-    public TransactionSendResult sendMessageInTransaction(final Message msg,
-        final LocalTransactionExecuter tranExecuter, final Object arg) throws MQClientException {
+    public TransactionSendResult sendMessageInTransaction(final Message msg, final LocalTransactionExecuter tranExecuter, final Object arg)
+            throws MQClientException {
         if (null == this.transactionCheckListener) {
             throw new MQClientException("localTransactionBranchCheckListener is null", null);
         }
@@ -83,14 +111,26 @@ public class TransactionMQProducer extends DefaultMQProducer {
         return this.defaultMQProducerImpl.sendMessageInTransaction(msg, tranExecuter, arg);
     }
 
+    /**
+     * 发送事务消息
+     *
+     * @param msg Transactional message to send.
+     * @param arg Argument used along with local transaction executor.
+     * @return
+     * @throws MQClientException
+     */
     @Override
-    public TransactionSendResult sendMessageInTransaction(final Message msg,
-        final Object arg) throws MQClientException {
+    public TransactionSendResult sendMessageInTransaction(final Message msg, final Object arg) throws MQClientException {
+
+        // 发送事务消息，必须要实现事务监听接口
         if (null == this.transactionListener) {
             throw new MQClientException("TransactionListener is null", null);
         }
 
+        // 消息 Topic 处理
         msg.setTopic(NamespaceUtil.wrapNamespace(this.getNamespace(), msg.getTopic()));
+
+        // 发送事务消息
         return this.defaultMQProducerImpl.sendMessageInTransaction(msg, null, arg);
     }
 

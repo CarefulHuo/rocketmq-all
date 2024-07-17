@@ -60,7 +60,15 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 public class MQAdminImpl {
 
     private final InternalLogger log = ClientLogger.getLog();
+
+    /**
+     * 客户端实例
+     */
     private final MQClientInstance mQClientFactory;
+
+    /**
+     * 超时时间
+     */
     private long timeoutMillis = 6000;
 
     public MQAdminImpl(MQClientInstance mQClientFactory) {

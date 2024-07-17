@@ -36,13 +36,23 @@ public class FilterAPI {
         return simple;
     }
 
+    /**
+     * 构建订阅数据，根据 Topic、订阅表达式去创建订阅数据
+     * @param topic Topic
+     * @param subString 订阅多个表达式，如多个 tag
+     * @return
+     * @throws Exception
+     */
     public static SubscriptionData buildSubscriptionData(String topic, String subString) throws Exception {
         SubscriptionData subscriptionData = new SubscriptionData();
         subscriptionData.setTopic(topic);
         subscriptionData.setSubString(subString);
 
+        // 订阅表达式为空 || * ，表示订阅所有 tag，即 *
         if (null == subString || subString.equals(SubscriptionData.SUB_ALL) || subString.length() == 0) {
             subscriptionData.setSubString(SubscriptionData.SUB_ALL);
+
+        // 订阅表达式不为空，解析订阅表达式，得到指定的 tag
         } else {
             String[] tags = subString.split("\\|\\|");
             if (tags.length > 0) {
@@ -50,7 +60,9 @@ public class FilterAPI {
                     if (tag.length() > 0) {
                         String trimString = tag.trim();
                         if (trimString.length() > 0) {
+                            // todo 保存 tag
                             subscriptionData.getTagsSet().add(trimString);
+                            // todo 保存 tag 的 HashCode
                             subscriptionData.getCodeSet().add(trimString.hashCode());
                         }
                     }

@@ -25,6 +25,8 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
 
 /**
  * Pulling consumer interface
+ * pull 方法消费
+ *
  */
 public interface MQPullConsumer extends MQConsumer {
     /**
@@ -43,19 +45,23 @@ public interface MQPullConsumer extends MQConsumer {
     void registerMessageQueueListener(final String topic, final MessageQueueListener listener);
 
     /**
+     * 拉取消息
+     * 说明：
+     * Pull 方式要先指定拉取的队列，也就是消费者要自己维护节点要拉取队列，而且一次拉取过来的消息时顺序的
+     * 这部分的顺序消费，需要业务自己处理
+     *
      * Pulling the messages,not blocking
      *
-     * @param mq from which message queue
+     * @param mq from which message queue  从哪个消息队列拉取
      * @param subExpression subscription expression.it only support or operation such as "tag1 || tag2 || tag3" <br> if
-     * null or * expression,meaning subscribe
+     * null or * expression,meaning subscribe 根据 tag 过滤
      * all
-     * @param offset from where to pull
-     * @param maxNums max pulling numbers
+     * @param offset from where to pull    从哪个位置开始拉取
+     * @param maxNums max pulling numbers  最大拉取数量
      * @return The resulting {@code PullRequest}
      */
-    PullResult pull(final MessageQueue mq, final String subExpression, final long offset,
-        final int maxNums) throws MQClientException, RemotingException, MQBrokerException,
-        InterruptedException;
+    PullResult pull(final MessageQueue mq, final String subExpression, final long offset, final int maxNums)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException;
 
     /**
      * Pulling the messages in the specified timeout

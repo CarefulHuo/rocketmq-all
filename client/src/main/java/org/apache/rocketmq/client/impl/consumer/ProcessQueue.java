@@ -127,7 +127,7 @@ public class ProcessQueue {
     /**
      * 是否锁定消息处理队列，标识锁定对应的消息处理队列成功
      * <p>
-     * todo 该队列对应的分布式锁锁定了，会设置为 true
+     * todo 该消息处理队列对应的消息队列的分布式锁锁定了，会设置为 true
      */
     private volatile boolean locked = false;
 

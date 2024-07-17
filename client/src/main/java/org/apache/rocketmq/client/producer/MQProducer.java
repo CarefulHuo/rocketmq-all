@@ -26,7 +26,19 @@ import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
+/**
+ * RocketMQ 使用了一个设计模式：门面模式(Facade Patten)
+ * 门面模式主要作用是给客户端提供了一个可以访问系统的接口，隐藏系统内部的复杂性
+ */
 public interface MQProducer extends MQAdmin {
+
+    /**
+     * 在 Producer 的接口 MQProducer 中，定义了多个不同参数的发送消息方法，按照发送方式的不同分为三类：
+     * 1. 单向发送(OneWay) 发送消息后立即返回，不处理响应，不关心是否发送成功
+     * 2. 同步发送(Sync)，发送消息后等待响应，处理响应
+     * 3. 异步发送(Async)，发送消息后立即返回，在提供的回调方法中处理响应
+     */
+
     void start() throws MQClientException;
 
     void shutdown();
@@ -74,6 +86,17 @@ public interface MQProducer extends MQAdmin {
         final SendCallback sendCallback) throws MQClientException, RemotingException,
         InterruptedException;
 
+    /**
+     * Producer 顺序发送
+     * @param msg
+     * @param selector
+     * @param arg
+     * @param sendCallback
+     * @param timeout
+     * @throws MQClientException
+     * @throws RemotingException
+     * @throws InterruptedException
+     */
     void send(final Message msg, final MessageQueueSelector selector, final Object arg,
         final SendCallback sendCallback, final long timeout) throws MQClientException, RemotingException,
         InterruptedException;
