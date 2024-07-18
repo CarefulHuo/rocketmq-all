@@ -80,7 +80,7 @@ public class NamesrvController {
 
     /**
      * 用于指定 NettyServer 的相关配置属性
-     * 以下 3 个属性与网络通信有关， NameServer 与 Broker 、Producer、Consumer 之间的网络通信，基于 Netty 实现
+     * 以下 3 个属性与网络通信有关， NameServer 与 Broker 、客户端(Producer、Consumer) 之间的网络通信，基于 Netty 实现
      */
     private final NettyServerConfig nettyServerConfig;
     private RemotingServer remotingServer;
@@ -108,15 +108,16 @@ public class NamesrvController {
         // 加载 KV 配置
         this.kvConfigManager.load();
 
-        // 创建 NettyServer 网络处理对象，也就是创建 Namesrv 服务器，用于处理请求，请求的处理交给 NettyRequestProcessor
+        // todo 创建 NettyServer 网络处理对象，也就是创建 Namesrv 服务器，用于处理请求，请求的处理交给 NettyRequestProcessor
         // 这样一来，NameSrv 就可以处理来自 Broker、Producer(客户端(生产者))、Consumer(客户端(消费者)) 的请求
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
+
         // 初始化，线程数固定为 nettyServerConfig.getServerWorkerThreads() 的固定线程池
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
 
         /**
-         * 将 DefaultProcessor 与 remotingExecutor 关联起来(绑定到一起)
+         * 将 DefaultRequestProcessor 与 remotingExecutor 关联起来(绑定到一起)
          * 1.在处理请求时，NettyRemotingAbstract 会将请求包装成任务 ，然后提交给 remotingExecutor 线程池进行处理
          * 2.处理完成后，将结果通知给请求端
          * @see org.apache.rocketmq.remoting.netty.NettyRemotingServer.NettyServerHandler 处理命令的模版方法，NameSrv 会使用 DefaultRequestProcessor 处理
@@ -124,7 +125,7 @@ public class NamesrvController {
         this.registerProcessor();
 
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-            // 开启定时任务，每隔 10 s 扫描一次 Broker，并剔除长时间没有和 NameSrv 通信的 Broker
+            // todo NameSrv 启动定时任务，每隔 10 s 扫描一次 Broker，并剔除长时间没有和 NameSrv 通信的 Broker
             // 首次延迟 5 秒执行
             @Override
             public void run() {
@@ -133,7 +134,7 @@ public class NamesrvController {
         }, 5, 10, TimeUnit.SECONDS);
 
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-            // 开启定时任务，每隔 10 分钟打印下 kv 配置
+            // todo NameSrv 启动定时任务，每隔 10 分钟打印下 kv 配置
             // 首次延迟 1 分钟执行
             @Override
             public void run() {

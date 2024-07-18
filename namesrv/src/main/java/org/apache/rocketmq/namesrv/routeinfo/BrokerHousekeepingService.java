@@ -23,6 +23,10 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.namesrv.NamesrvController;
 import org.apache.rocketmq.remoting.ChannelEventListener;
 
+/**
+ * 监控 Broker 连接状态的代理类
+ * 主要用于在 NameSrv 与 Broker 的连接通道在通道关闭、通道发送异常，通道空闲时，在 RouteInfoManager 的 5 个 Map中移除已宕机的 Broker
+ */
 public class BrokerHousekeepingService implements ChannelEventListener {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
     private final NamesrvController namesrvController;

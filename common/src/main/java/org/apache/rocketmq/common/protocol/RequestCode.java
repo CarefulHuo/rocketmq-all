@@ -17,16 +17,41 @@
 
 package org.apache.rocketmq.common.protocol;
 
+/**
+ * 请求码：用来区分请求类型，如 SEND_MESSAGE 表示消息发送请求，PULL_MESSAGE 表示消息拉取请求，QUERY_MESSAGE 表示消息查询请求，等等
+ * 特别说明：
+ * 1. RocketMQ 的网络设计值得我们学习和借鉴
+ * 2. 首先在客户端将不同的请求定义不同的请求命令 code，服务端会将客户端请求进行分类，每个请求命令或每类请求命令定义一个处理器(NettyRequestProcessor),
+ *    然后每个 NettyRequestProcessor 绑定到一个单独的线程池，进行命令处理，不同类型的请求将使用不同的线程池进行处理，实现线程隔离
+ */
 public class RequestCode {
 
+    /**
+     * 发送消息请求码
+     */
     public static final int SEND_MESSAGE = 10;
 
+    /**
+     * 拉取消息请求码
+     */
     public static final int PULL_MESSAGE = 11;
 
     public static final int QUERY_MESSAGE = 12;
     public static final int QUERY_BROKER_OFFSET = 13;
+
+    /**
+     * 获取消费进度请求码
+     */
     public static final int QUERY_CONSUMER_OFFSET = 14;
+
+    /**
+     * 更新消费进度请求码
+     */
     public static final int UPDATE_CONSUMER_OFFSET = 15;
+
+    /**
+     * 更新/创建主题请求码
+     */
     public static final int UPDATE_AND_CREATE_TOPIC = 17;
     public static final int GET_ALL_TOPIC_CONFIG = 21;
     public static final int GET_TOPIC_CONFIG_LIST = 22;
@@ -41,28 +66,61 @@ public class RequestCode {
 
     public static final int GET_BROKER_RUNTIME_INFO = 28;
     public static final int SEARCH_OFFSET_BY_TIMESTAMP = 29;
+
+    /**
+     * 获取消息队列最大偏移量请求码
+     */
     public static final int GET_MAX_OFFSET = 30;
+
+    /**
+     * 获取消息队列最小偏移量请求码
+     */
     public static final int GET_MIN_OFFSET = 31;
 
     public static final int GET_EARLIEST_MSG_STORETIME = 32;
 
     public static final int VIEW_MESSAGE_BY_ID = 33;
 
+    /**
+     * 客户端心跳请求码
+     */
     public static final int HEART_BEAT = 34;
 
     public static final int UNREGISTER_CLIENT = 35;
 
+    /**
+     * 消费失败，重新投递消息的请求码
+     */
     public static final int CONSUMER_SEND_MSG_BACK = 36;
 
+    /**
+     * 提交/回滚事务
+     */
     public static final int END_TRANSACTION = 37;
+
+    /**
+     * 获取消费组下的消费者列表请求码
+     */
     public static final int GET_CONSUMER_LIST_BY_GROUP = 38;
 
+    /**
+     * 事务消息回查请求码
+     */
     public static final int CHECK_TRANSACTION_STATE = 39;
 
+    /**
+     * 通知消费者列表变化
+     */
     public static final int NOTIFY_CONSUMER_IDS_CHANGED = 40;
 
+    /**
+     * 对指定的 MessageQueue(s) 上锁的请求码
+     */
     public static final int LOCK_BATCH_MQ = 41;
 
+    /**
+     * 释放指定的 MessageQueue(s) 的锁的请求码
+     */
     public static final int UNLOCK_BATCH_MQ = 42;
     public static final int GET_ALL_CONSUMER_OFFSET = 43;
 
@@ -89,9 +147,17 @@ public class RequestCode {
     public static final int REGISTER_BROKER = 103;
 
     public static final int UNREGISTER_BROKER = 104;
+
+    /**
+     * 根据 Topic 获取路由信息的请求码
+     */
     public static final int GET_ROUTEINFO_BY_TOPIC = 105;
 
     public static final int GET_BROKER_CLUSTER_INFO = 106;
+
+    /**
+     * 更新或创建消费组订阅信息的请求码
+     */
     public static final int UPDATE_AND_CREATE_SUBSCRIPTIONGROUP = 200;
     public static final int GET_ALL_SUBSCRIPTIONGROUP_CONFIG = 201;
     public static final int GET_TOPIC_STATS_INFO = 202;
@@ -172,6 +238,9 @@ public class RequestCode {
      */
     public static final int GET_NAMESRV_CONFIG = 319;
 
+    /**
+     * 发送批量消息的请求码
+     */
     public static final int SEND_BATCH_MESSAGE = 320;
 
     public static final int QUERY_CONSUME_QUEUE = 321;

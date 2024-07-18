@@ -67,8 +67,7 @@ public class TopicConfigManager extends ConfigManager {
      * 1. todo 该集合用于存放 Topic 到 Topic 配置的映射，这里的信息会全部上报到 NameSrv
      * 2. todo 这里的数据，仅仅包含 Topic 信息，因为当前类持有 BrokerController 对象，它已经代表了是哪个 Broker ，上报到 NameSrv , 是通过 BrokerController 完成的
      */
-    private final ConcurrentMap<String, TopicConfig> topicConfigTable =
-        new ConcurrentHashMap<String, TopicConfig>(1024);
+    private final ConcurrentMap<String, TopicConfig> topicConfigTable = new ConcurrentHashMap<String, TopicConfig>(1024);
     private final DataVersion dataVersion = new DataVersion();
 
     /**

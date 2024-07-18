@@ -24,13 +24,13 @@ import org.apache.rocketmq.common.TopicConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
 /**
- * 继承自RemotingSerializable，用于包装Topic配置信息。
- * 它包含一个ConcurrentHashMap类型的成员变量topicConfigTable，
- * 用于存储Topic名称和对应的TopicConfig对象；以及一个DataVersion类型的成员变量dataVersion，用于表示数据版本。
+ * Topic 包装数据
+ * 1. 继承自 RemotingSerializable，用于包装 Topic 配置信息。
+ * 2. 一个 ConcurrentHashMap 类型的成员变量 topicConfigTable，用于存储 Topic名称和对应的 TopicConfig 对象
+ * 3. 一个 DataVersion 类型的成员变量 dataVersion，用于表示数据版本。
  */
 public class TopicConfigSerializeWrapper extends RemotingSerializable {
-    private ConcurrentMap<String, TopicConfig> topicConfigTable =
-        new ConcurrentHashMap<String, TopicConfig>();
+    private ConcurrentMap<String, TopicConfig> topicConfigTable = new ConcurrentHashMap<String, TopicConfig>();
     private DataVersion dataVersion = new DataVersion();
 
     public ConcurrentMap<String, TopicConfig> getTopicConfigTable() {

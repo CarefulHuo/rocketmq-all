@@ -7,7 +7,7 @@ import org.apache.rocketmq.remoting.common.RemotingHelper;
 
 public class SyncProducerTest {
     public static void main(String[] args) {
-        //（1） 初始化一个producer并设置Producer group name
+        //（1） 初始化一个 producer 并设置Producer group name
         DefaultMQProducer producer = new DefaultMQProducer("source_code_reading_group");
         //（2）设置NameServer地址
         producer.setNamesrvAddr("127.0.0.1:9876");

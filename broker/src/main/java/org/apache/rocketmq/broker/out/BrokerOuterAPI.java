@@ -65,12 +65,12 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
  * updateNameServerAddressList(final String addrs)方法用于更新NettyRemotingClient的NameServer地址列表。
  * registerBrokerAll 方法用于向所有的NameServer注册Broker信息，包括Topic配置和FilterServer列表等。
  * unregisterBrokerAll 方法用于向所有的NameServer注销Broker信息。
- * needRegister方法用于判断是否需要向NameServer注册Broker。
- * getAllTopicConfig方法用于获取指定Broker地址的所有Topic配置信息。
- * getAllConsumerOffset方法用于获取指定Broker地址的所有消费者偏移量信息。
- * getAllDelayOffset方法用于获取指定Broker地址的所有延迟消息偏移量信息。
- * getAllSubscriptionGroupConfig方法用于获取指定Broker地址的所有订阅组配置信息。
- * registerRPCHook方法用于注册RPCHook接口实现。
+ * needRegister 方法用于判断是否需要向NameServer注册Broker。
+ * getAllTopicConfig 方法用于获取指定Broker地址的所有Topic配置信息。
+ * getAllConsumerOffset 方法用于获取指定Broker地址的所有消费者偏移量信息。
+ * getAllDelayOffset 方法用于获取指定Broker地址的所有延迟消息偏移量信息。
+ * getAllSubscriptionGroupConfig 方法用于获取指定Broker地址的所有订阅组配置信息。
+ * registerRPCHook 方法用于注册RPCHook接口实现。
  */
 public class BrokerOuterAPI {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);

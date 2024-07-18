@@ -16,8 +16,10 @@
  */
 package org.apache.rocketmq.namesrv.processor;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import java.io.UnsupportedEncodingException;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.rocketmq.common.DataVersion;
@@ -52,6 +54,7 @@ import org.apache.rocketmq.common.protocol.header.namesrv.WipeWritePermOfBrokerR
 import org.apache.rocketmq.common.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader;
 import org.apache.rocketmq.common.protocol.route.TopicRouteData;
 import org.apache.rocketmq.namesrv.NamesrvController;
+import org.apache.rocketmq.namesrv.routeinfo.RouteInfoManager;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.exception.RemotingCommandException;
 import org.apache.rocketmq.remoting.netty.AsyncNettyRequestProcessor;
@@ -59,7 +62,7 @@ import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /**
- * NameSrv 端负责处理 Broker 、Producer、Consumer 发送过来的 RPC 请求的处理器
+ * NameSrv 端负责处理 Broker 、客户端(Producer、Consumer) 发送过来的 RPC 请求的处理器
  */
 public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implements NettyRequestProcessor {
     private static InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
@@ -98,22 +101,28 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
                 return this.deleteKVConfig(ctx, request);
             case RequestCode.QUERY_DATA_VERSION:
                 return queryBrokerTopicConfig(ctx, request);
+
             // todo 处理 Broker 注册请求
             case RequestCode.REGISTER_BROKER:
-                // 根据 Broker 的版本号不同，分别有两个不同的处理实现方法，但是两个方法的实现流程都差不多
-                // 都是调用 RouteInfoManager#registerBroker
+                /**
+                 * 根据 Broker 的版本号不同，分别有两个不同的处理实现方法，但是两个方法的实现流程都差不多，实际都是调用 RouteInfoManager#registerBroker
+                 * @see RouteInfoManager#registerBroker(String, String, String, long, String, TopicConfigSerializeWrapper, List, Channel)
+                 */
                 Version brokerVersion = MQVersion.value2Version(request.getVersion());
                 if (brokerVersion.ordinal() >= MQVersion.Version.V3_0_11.ordinal()) {
                     return this.registerBrokerWithFilterServer(ctx, request);
                 } else {
                     return this.registerBroker(ctx, request);
                 }
+
             // todo 剔除 Broker，调用 RouteInfoManager#unregisterBroker
             case RequestCode.UNREGISTER_BROKER:
                 return this.unregisterBroker(ctx, request);
+
             // todo 处理客户端请求，获取路由信息
             case RequestCode.GET_ROUTEINFO_BY_TOPIC:
                 return this.getRouteInfoByTopic(ctx, request);
+
             case RequestCode.GET_BROKER_CLUSTER_INFO:
                 return this.getBrokerClusterInfo(ctx, request);
             case RequestCode.WIPE_WRITE_PERM_OF_BROKER:
@@ -258,8 +267,7 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
         return response;
     }
 
-    private boolean checksum(ChannelHandlerContext ctx, RemotingCommand request,
-        RegisterBrokerRequestHeader requestHeader) {
+    private boolean checksum(ChannelHandlerContext ctx, RemotingCommand request, RegisterBrokerRequestHeader requestHeader) {
         if (requestHeader.getBodyCrc32() != 0) {
             final int crc32 = UtilAll.crc32(request.getBody());
             if (crc32 != requestHeader.getBodyCrc32()) {
@@ -295,10 +303,20 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
         return response;
     }
 
-    public RemotingCommand registerBroker(ChannelHandlerContext ctx,
-        RemotingCommand request) throws RemotingCommandException {
+    /**
+     * 注册 Broker(附带 Broker 的 Topic 消息队列信息) 到 NameSrv
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
+    public RemotingCommand registerBroker(ChannelHandlerContext ctx, RemotingCommand request) throws RemotingCommandException {
+
+        // 创建响应消息对象
         final RemotingCommand response = RemotingCommand.createResponseCommand(RegisterBrokerResponseHeader.class);
         final RegisterBrokerResponseHeader responseHeader = (RegisterBrokerResponseHeader) response.readCustomHeader();
+
+        // 解码请求
         final RegisterBrokerRequestHeader requestHeader =
             (RegisterBrokerRequestHeader) request.decodeCommandCustomHeader(RegisterBrokerRequestHeader.class);
 
@@ -308,6 +326,7 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
             return response;
         }
 
+        // 解码请求中的 Topic 配置信息，即 Topic 配置信息
         TopicConfigSerializeWrapper topicConfigWrapper;
         if (request.getBody() != null) {
             topicConfigWrapper = TopicConfigSerializeWrapper.decode(request.getBody(), TopicConfigSerializeWrapper.class);
@@ -318,19 +337,20 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
         }
 
         RegisterBrokerResult result = this.namesrvController.getRouteInfoManager().registerBroker(
-            requestHeader.getClusterName(),
-            requestHeader.getBrokerAddr(),
-            requestHeader.getBrokerName(),
-            requestHeader.getBrokerId(),
+            requestHeader.getClusterName(),  // 上报的 Broker 集群名称
+            requestHeader.getBrokerAddr(),  // 上报的 Broker 的地址
+            requestHeader.getBrokerName(), // 上报的 Broker 名称
+            requestHeader.getBrokerId(), // 上报的 BrokerId ， 0 为 Master(主节点) >0 为 Slave(从节点)
             requestHeader.getHaServerAddr(),
-            topicConfigWrapper,
-            null,
-            ctx.channel()
+            topicConfigWrapper,  // 上报的 Broker 的 Topic 配置信息
+            null, // 无过滤器
+            ctx.channel() // 连接 NameSrv 的通道
         );
 
         responseHeader.setHaServerAddr(result.getHaServerAddr());
         responseHeader.setMasterAddr(result.getMasterAddr());
 
+        // 更新 NameSrv 的 KV 属性
         byte[] jsonValue = this.namesrvController.getKvConfigManager().getKVListByNamespace(NamesrvUtil.NAMESPACE_ORDER_TOPIC_CONFIG);
         response.setBody(jsonValue);
         response.setCode(ResponseCode.SUCCESS);
@@ -338,6 +358,13 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
         return response;
     }
 
+    /**
+     * 在 NameSrv 取消注册 Broker 的相关信息
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     public RemotingCommand unregisterBroker(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
@@ -347,10 +374,10 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
 
         // 注销当前 Broker 在 NameSrv 中的信息
         this.namesrvController.getRouteInfoManager().unregisterBroker(
-            requestHeader.getClusterName(),
-            requestHeader.getBrokerAddr(),
-            requestHeader.getBrokerName(),
-            requestHeader.getBrokerId());
+            requestHeader.getClusterName(),  // 上报的 Broker 集群名称
+            requestHeader.getBrokerAddr(), // 上报的 Broker 地址
+            requestHeader.getBrokerName(), // 上报的 Broker 名称
+            requestHeader.getBrokerId()); // 上报的 BrokerId 0：Master >0：Slave
 
         response.setCode(ResponseCode.SUCCESS);
         response.setRemark(null);

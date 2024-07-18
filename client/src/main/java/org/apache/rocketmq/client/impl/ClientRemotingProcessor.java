@@ -57,7 +57,7 @@ import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /**
- * 客户端远程处理器，主要针对 Broker 端发来的请求，进行处理
+ * 客户端远程处理器，主要针对 Broker/NameServer 端发来的请求，进行处理
  */
 public class ClientRemotingProcessor extends AsyncNettyRequestProcessor implements NettyRequestProcessor {
     private final InternalLogger log = ClientLogger.getLog();

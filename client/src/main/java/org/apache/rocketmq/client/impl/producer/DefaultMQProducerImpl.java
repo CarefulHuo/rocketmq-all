@@ -803,7 +803,8 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                             // 消息同步发送，支持重试机制，通过 retryTimesWhenSendFailed 参数设置，默认为 2 ，表示重试 2 次，实际上也就是最多发送 3 次
                             case SYNC:
                                 if (sendResult.getSendStatus() != SendStatus.SEND_OK) {
-                                    // todo 疑惑？只有开启重试才会重试，否则发送失败也不会重试
+                                    // todo 消息发送失败 && 开启重试其他Broker开关，此时会选择其他 Broker 进行重试发送
+                                    //  否则，只会在 客户端异常、网络异常的情况下，才会进行发送重试
                                     if (this.defaultMQProducer.isRetryAnotherBrokerWhenNotStoreOK()) {
                                         continue;
                                     }
@@ -833,6 +834,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         log.warn(msg.toString());
                         exception = e;
                         continue;
+                        /**
+                         * broker异常，直接抛出，不再进行重试
+                         */
                     } catch (MQBrokerException e) {
                         endTimestamp = System.currentTimeMillis();
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, true);
@@ -854,6 +858,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
                                 throw e;
                         }
+                        /**
+                         * 中断异常，直接抛出，不再进行重试
+                         */
                     } catch (InterruptedException e) {
                         endTimestamp = System.currentTimeMillis();
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, false);

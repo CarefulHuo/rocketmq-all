@@ -304,7 +304,7 @@ public class MQClientInstance {
             info.setOrderTopic(true);
         } else {
 
-            // todo 从路由信息中获取队列信息，注意：这是 topic 下所有队列信息，可能这些队列分布在不同的 Broker 上
+            // todo 从路由信息中获取队列信息，注意：这是 topic 下所有队列信息，可能这些队列分布在不同的 Broker 上，所有存在多个 QueueData
             List<QueueData> qds = route.getQueueDatas();
             Collections.sort(qds);
 
@@ -366,7 +366,7 @@ public class MQClientInstance {
         // 根据 TopicRouteData 信息创建 readQueueNums 条读消息队列
         Set<MessageQueue> mqList = new HashSet<MessageQueue>();
 
-        // 获取 Topic 的队列信息
+        // 获取 Topic 的队列信息，这些队列信息可能分布在不同的 Broker 上，所以是 QueueData 集合
         List<QueueData> qds = route.getQueueDatas();
 
         // 遍历队列集合
@@ -901,7 +901,7 @@ public class MQClientInstance {
                             log.info("the topic[{}] route info changed, old[{}] ,new[{}]", topic, old, topicRouteData);
                         }
 
-                        //--------------------todo 同步更新 消息生产者、消息消费者关于该 Topic 的缓存(特别读写队列的创建)，后续可以直接从缓存查找
+                        //--------------------todo 同步更新 消息生产者、消息消费者关于该 Topic 的缓存(特别读写队列的创建)、关于该 Topic 分布的 Broker 信息也会同步更新，后续可以直接从缓存查找
                         if (changed) {
                             // 尝试更新当前 JVM 实例中消息生产者的本地关于当前 Topic 的发布信息缓存
                             // 将最新的 TopicRouteData 克隆一份，保存到 topicRouteTable 中，便于后续 TopicRouteData 信息是否变更的判断

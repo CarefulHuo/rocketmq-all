@@ -56,8 +56,7 @@ public class PullRequestHoldService extends ServiceThread {
      * key：topic@queueId 标记哪个消费队列
      * value：ManyPullRequest(内部是一个 ArrayList 集合，包含多个 pullRequest 请求，为保证原子性，使用 synchronized 关键字加锁)
      */
-    private ConcurrentMap<String/* topic@queueId */, ManyPullRequest> pullRequestTable =
-        new ConcurrentHashMap<String, ManyPullRequest>(1024);
+    private ConcurrentMap<String/* topic@queueId */, ManyPullRequest> pullRequestTable = new ConcurrentHashMap<String, ManyPullRequest>(1024);
 
     public PullRequestHoldService(final BrokerController brokerController) {
         this.brokerController = brokerController;
