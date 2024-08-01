@@ -163,6 +163,9 @@ public class CommitLog {
                 return new MessageExtBatchEncoder(defaultMessageStore.getMessageStoreConfig().getMaxMessageSize());
             }
         };
+
+        // 异步刷盘，建议使用自旋锁，因为每次消息写入成功后，唤醒等待刷盘的线程即可，锁竞争不激烈
+        // 同步刷盘，建议使用可重入锁，因为每次消息写入，都必须等待消息写入成功，才能进行刷盘，锁竞争激烈
         this.putMessageLock = defaultMessageStore.getMessageStoreConfig().isUseReentrantLockWhenPutMessage() ? new PutMessageReentrantLock() : new PutMessageSpinLock();
 
     }

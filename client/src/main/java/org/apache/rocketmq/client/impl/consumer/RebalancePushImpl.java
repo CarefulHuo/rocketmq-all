@@ -255,7 +255,7 @@ public class RebalancePushImpl extends RebalanceImpl {
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
 
                 // 如果 lastOffset >= 0，则直接返回 lastOffset
-                // todo lastOffset 等于 0 的情况 同 CONSUME_FROM_LAST_OFFSET 的解释相同，从 0 开始消费
+                // todo lastOffset 等于 0 的情况 同 CONSUME_FROM_FIRST_OFFSET 的解释相同，从 0 开始消费
                 //  注意：如果消息队列之前分配给别的消费者，消费过消息，那么 lastOffset 就不会是 0 ，而是从消息队列的最大逻辑偏移量开始消费，此时是 CONSUME_FROM_LAST_OFFSET 的语义
                 if (lastOffset >= 0) {
                     result = lastOffset;

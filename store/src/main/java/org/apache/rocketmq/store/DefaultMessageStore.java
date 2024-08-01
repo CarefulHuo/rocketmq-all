@@ -280,7 +280,7 @@ public class DefaultMessageStore implements MessageStore {
             this.haService = null;
         }
 
-        // 创建消息重放服务
+        // 创建消息重放服务(将消息写入 ConsumeQueue 和 index 文件)
         this.reputMessageService = new ReputMessageService();
         // 延时队列服务
         this.scheduleMessageService = new ScheduleMessageService(this);
@@ -914,7 +914,8 @@ public class DefaultMessageStore implements MessageStore {
                 // Offset > minOffSet && Offset < MaxOffSet ，正常情况下
             } else {
 
-                // 6. 从 ConsumeQueue 中获取消息当前逻辑偏移量，对应在 CommitLog 中的物理偏移量、消息大小、消息tagCode
+                // 6. 从 ConsumeQueue 中获取当前逻辑偏移量在 MappedFile 对应的位置及后面当前所在MappedFile文件中的所有的数据，
+                // 消息内容是：对应在 CommitLog 中的物理偏移量、消息大小、消息tagCode
                 SelectMappedBufferResult bufferConsumeQueue = consumeQueue.getIndexBuffer(offset);
 
                 if (bufferConsumeQueue != null) {
