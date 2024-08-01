@@ -220,6 +220,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                 .localAddress(new InetSocketAddress(this.nettyServerConfig.getListenPort()))
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
+                    // 给 NettyServerHandler 绑定各种处理器
                     public void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline()
                             .addLast(defaultEventExecutorGroup, HANDSHAKE_HANDLER_NAME, handshakeHandler)

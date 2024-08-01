@@ -161,7 +161,7 @@ public class RouteInfoManager {
     // 所以，这里就有一个矛盾的地方，Broker的状态，经常被更新，同时也被更加频繁的读取。这里如何提高并发，尤其是生产者进行消息发送时的并发。
     // 所以，这里使用了读写锁机制(针对读多写少的场景)
     // 为啥不用 synchronized 和 reentrantLock ?
-    //
+    // 为了提高消息处理的吞吐量，才使用 ReadWriteLock(读写锁)，因为 NameSrv 上的数据对应的操作更多的是读取。
     // 注册 Broker 的核心方法，NameServer 主要做服务的注册与发现
 
     /**

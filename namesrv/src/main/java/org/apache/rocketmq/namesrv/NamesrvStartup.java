@@ -81,18 +81,31 @@ public class NamesrvStartup {
             return null;
         }
 
+        // 创建 NameSrvConfig、NettyServerConfig 对象
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+
+        // 设置 Netty 监听默认端口 9876
         nettyServerConfig.setListenPort(9876);
+
+        // 读取命令行参数
         if (commandLine.hasOption('c')) {
             String file = commandLine.getOptionValue('c');
             if (file != null) {
+                // 文件转换为 InputStream
                 InputStream in = new BufferedInputStream(new FileInputStream(file));
+
+                // 创建 Properties 对象
                 properties = new Properties();
+
+                // 加载文件流
                 properties.load(in);
+
+                // 将 Properties 对象转换为 NamesrvConfig、NettyServerConfig 对象
                 MixAll.properties2Object(properties, namesrvConfig);
                 MixAll.properties2Object(properties, nettyServerConfig);
 
+                // 设置配置文件路径到 NamesrvConfig 对象的属性
                 namesrvConfig.setConfigStorePath(file);
 
                 System.out.printf("load config properties file OK, %s%n", file);
@@ -107,6 +120,7 @@ public class NamesrvStartup {
             System.exit(0);
         }
 
+        // 命令行的其他参数，设置到 NameSrvConfig 对象属性中
         MixAll.properties2Object(ServerUtil.commandLine2Properties(commandLine), namesrvConfig);
 
         if (null == namesrvConfig.getRocketmqHome()) {
@@ -114,6 +128,7 @@ public class NamesrvStartup {
             System.exit(-2);
         }
 
+        // 加载日志相关配置
         LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
         JoranConfigurator configurator = new JoranConfigurator();
         configurator.setContext(lc);
@@ -147,6 +162,7 @@ public class NamesrvStartup {
             System.exit(-3);
         }
 
+        // 添加 shutdownHook 钩子
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {
